@@ -2,10 +2,11 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
+    <!-- .NET Framework 4.8：Win10 1903+ / Win11 系统自带，用户无需安装任何运行时 -->
+    <TargetFramework>net48</TargetFramework>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>9.0</LangVersion>
     <AssemblyName>QizhouPavilion</AssemblyName>
     <RootNamespace>QizhouPavilion</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
@@ -13,16 +14,20 @@
     <FileVersion>1.0.1.0</FileVersion>
     <Product>QizhouPavilion</Product>
     <AssemblyTitle>琪舟阁</AssemblyTitle>
-    <!-- 不内置 .NET 运行时，产物只有几百 KB；运行时缺失时提示用户装 -->
-    <SelfContained>false</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <DebugType>none</DebugType>
+    <Optimize>true</Optimize>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.*" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>

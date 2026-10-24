@@ -178,13 +178,12 @@ namespace QizhouPavilion
 
                 var label = new Label
                 {
-                    Text = "输入你部署的导航站域名",
+                    Text = "输入你部署的导航站域名，例如 nav.example.com",
                     Left = 20, Top = 18, Width = 400, Height = 20
                 };
                 var box = new TextBox
                 {
-                    Left = 20, Top = 44, Width = 400,
-                    PlaceholderText = "例如 nav.example.com"
+                    Left = 20, Top = 44, Width = 400
                 };
                 var ok = new Button
                 {
