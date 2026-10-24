@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.IO;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -8,18 +7,18 @@ using Microsoft.Web.WebView2.Core;
 namespace QizhouPavilion
 {
     /**
-     * 不再使用 WinForms 的 WebView2 控件：
-     * 那个封装层会按 DIP 换算 controller 的 bounds，窗口不是最大化时它和真实客户区对不上，
-     * 表现就是"画面在上面的位置，点击却落到别处"。
-     * 这里直接拿 CoreWebView2Controller，绑定窗体 HWND，并用 UseRawPixels 让它按物理像素走。
+     * 直接使用 CoreWebView2Controller（不用 WinForms 的 WebView2 控件）：
+     * 那个封装层按 DIP 换算 bounds，窗口不是最大化时会和真实客户区对不上，
+     * 表现就是"画面在这里，点击落到别处"。这里用 UseRawPixels 让它按物理像素走。
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "build 10";
+        private const string BuildTag = "build 11";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
         private CoreWebView2 core;
+        private XButtonFilter xFilter;
         private bool coreReady;
         private bool inSetup;
 
@@ -39,9 +38,22 @@ namespace QizhouPavilion
 
             Resize += delegate { SyncBounds(); };
             Shown += OnShown;
+
+            // 鼠标侧键（后退/前进），键盘焦点在网页里时也能收到
+            xFilter = new XButtonFilter(this);
+            Application.AddMessageFilter(xFilter);
         }
 
-        /** 把 WebView 的显示区域钉死在客户区（物理像素）。 */
+        public void NavigateBack()
+        {
+            if (core != null && core.CanGoBack) core.GoBack();
+        }
+
+        public void NavigateForward()
+        {
+            if (core != null && core.CanGoForward) core.GoForward();
+        }
+
         private void SyncBounds()
         {
             if (controller == null) return;
@@ -90,7 +102,6 @@ namespace QizhouPavilion
             }
 
             controller = await env.CreateCoreWebView2ControllerAsync(Handle);
-            // 关键：bounds 用物理像素，避免 DIP 换算带来的点击偏移
             controller.BoundsMode = CoreWebView2BoundsMode.UseRawPixels;
             controller.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
             controller.IsVisible = true;
@@ -103,11 +114,12 @@ namespace QizhouPavilion
             st.IsStatusBarEnabled = false;
             st.AreDevToolsEnabled = false;
             st.IsZoomControlEnabled = true;
+            // 右键交回给网页自己（复制、另存为都还在）
+            st.AreDefaultContextMenusEnabled = true;
             string ua = st.UserAgent;
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
 
             core.WebMessageReceived += OnWebMessage;
-            core.ContextMenuRequested += OnContextMenu;
             core.NewWindowRequested += (s, e) =>
             {
                 e.Handled = true;
@@ -122,7 +134,6 @@ namespace QizhouPavilion
         {
             if (!coreReady) return;
             inSetup = false;
-            core.Settings.AreDefaultContextMenusEnabled = false;
             core.Navigate(url);
         }
 
@@ -132,65 +143,35 @@ namespace QizhouPavilion
             string html = SetupPage.Build(current);
             if (html == null) return;
             inSetup = true;
-            // 欢迎页放行原生菜单，否则输入框里没法右键粘贴域名
-            core.Settings.AreDefaultContextMenusEnabled = true;
             core.NavigateToString(html);
         }
 
-        private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
+        /** 网页里的消息：欢迎页提交地址、取消，以及侧边栏的"更改域名"。 */
+        private void OnWebMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
-            if (!coreReady || inSetup) return;
-            e.Handled = true;
-            ShowAppMenu(e.Location);
-        }
+            string text;
+            try { text = e.TryGetWebMessageAsString(); }
+            catch { return; }
+            if (string.IsNullOrWhiteSpace(text)) return;
 
-        private void ShowAppMenu(Point p)
-        {
-            var menu = new ContextMenuStrip();
-            menu.Renderer = new RoundMenuRenderer();
-            menu.ShowImageMargin = false;
-            menu.ShowCheckMargin = false;
-            menu.BackColor = Color.White;
-            menu.Font = new Font("Microsoft YaHei UI", 9.5F);
-            menu.Padding = new Padding(0, 6, 0, 6);
-            menu.DropShadowEnabled = true;
-
-            AddItem(menu, "更换导航站域名", delegate { ShowSetupPage(Config.Load()); });
-            AddItem(menu, "后退", delegate
+            if (text == "cancel")
             {
-                if (core != null && core.CanGoBack) core.GoBack();
-            });
-            AddItem(menu, "刷新", delegate
+                string current = Config.Load();
+                if (current != null) NavigateTo(current);
+                return;
+            }
+
+            if (text == "change")
             {
-                if (core != null) core.Reload();
-            });
-            menu.Items.Add(new ToolStripSeparator());
-            AddItem(menu, "退出琪舟阁", delegate { Close(); });
+                ShowSetupPage(Config.Load());
+                return;
+            }
 
-            menu.Opened += delegate
-            {
-                try
-                {
-                    using (GraphicsPath path = RoundMenuRenderer.RoundedPath(
-                        new Rectangle(0, 0, menu.Width, menu.Height), 10))
-                    {
-                        menu.Region = new Region(path);
-                    }
-                }
-                catch
-                {
-                }
-            };
+            string url = UrlUtil.Normalize(text);
+            if (url == null) return;
 
-            menu.Show(this, p);
-        }
-
-        private static void AddItem(ContextMenuStrip menu, string text, EventHandler onClick)
-        {
-            var item = new ToolStripMenuItem(text);
-            item.Padding = new Padding(14, 5, 14, 5);
-            item.Click += onClick;
-            menu.Items.Add(item);
+            Config.Save(url);
+            NavigateTo(url);
         }
 
         /** 键盘焦点在网页里时 Form.KeyDown 收不到，只能从 controller 这一层拦。 */
@@ -217,32 +198,12 @@ namespace QizhouPavilion
                 ShowSetupPage(Config.Load());
                 e.Handled = true;
             }
-            else if (key == Keys.Left && (mods & Keys.Alt) == Keys.Alt)
+            else if ((key == Keys.Left && (mods & Keys.Alt) == Keys.Alt) ||
+                     (key == Keys.BrowserBack))
             {
-                if (core != null && core.CanGoBack) core.GoBack();
+                NavigateBack();
                 e.Handled = true;
             }
-        }
-
-        private void OnWebMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
-        {
-            string text;
-            try { text = e.TryGetWebMessageAsString(); }
-            catch { return; }
-            if (string.IsNullOrWhiteSpace(text)) return;
-
-            if (text == "cancel")
-            {
-                string current = Config.Load();
-                if (current != null) NavigateTo(current);
-                return;
-            }
-
-            string url = UrlUtil.Normalize(text);
-            if (url == null) return;
-
-            Config.Save(url);
-            NavigateTo(url);
         }
 
         private void ShowDiagnostics()
@@ -256,7 +217,7 @@ namespace QizhouPavilion
             if (controller != null)
             {
                 Rectangle b = controller.Bounds;
-                sb.AppendLine("Controller = " + b.Width + " x " + b.Height + " @ " + b.X + "," + b.Y);
+                sb.AppendLine("Bounds = " + b.Width + " x " + b.Height + " @ " + b.X + "," + b.Y);
                 sb.AppendLine("BoundsMode = " + controller.BoundsMode);
             }
             MessageBox.Show(sb.ToString(), "诊断信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -282,6 +243,11 @@ namespace QizhouPavilion
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            if (xFilter != null)
+            {
+                Application.RemoveMessageFilter(xFilter);
+                xFilter = null;
+            }
             try
             {
                 if (controller != null) controller.Close();
@@ -293,72 +259,32 @@ namespace QizhouPavilion
         }
     }
 
-    /** 自绘右键菜单：白底圆角、悬停高亮。 */
-    internal sealed class RoundMenuRenderer : ToolStripProfessionalRenderer
+    /** 鼠标侧键：XBUTTON1 后退，XBUTTON2 前进。 */
+    internal sealed class XButtonFilter : IMessageFilter
     {
-        public static GraphicsPath RoundedPath(Rectangle r, int radius)
+        private const int WM_XBUTTONDOWN = 0x020B;
+        private readonly MainForm form;
+
+        public XButtonFilter(MainForm owner)
         {
-            var path = new GraphicsPath();
-            int d = radius * 2;
-            if (d > r.Width) d = r.Width;
-            if (d > r.Height) d = r.Height;
-            path.AddArc(r.X, r.Y, d, d, 180, 90);
-            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-            path.CloseFigure();
-            return path;
+            form = owner;
         }
 
-        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        public bool PreFilterMessage(ref Message m)
         {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using (GraphicsPath path = RoundedPath(new Rectangle(Point.Empty, e.ToolStrip.Size), 10))
-            using (var brush = new SolidBrush(Color.White))
+            if (m.Msg != WM_XBUTTONDOWN) return false;
+            int button = (int)(m.WParam.ToInt64() >> 16) & 0xFFFF;
+            if (button == 1)
             {
-                e.Graphics.FillPath(brush, path);
+                form.NavigateBack();
+                return true;
             }
-        }
-
-        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
-        {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using (GraphicsPath path = RoundedPath(
-                new Rectangle(0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1), 10))
-            using (var pen = new Pen(Color.FromArgb(30, 16, 24, 40)))
+            if (button == 2)
             {
-                e.Graphics.DrawPath(pen, path);
+                form.NavigateForward();
+                return true;
             }
-        }
-
-        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
-        {
-            if (!e.Item.Selected) return;
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            var r = new Rectangle(4, 1, e.Item.Width - 8, e.Item.Height - 2);
-            using (GraphicsPath path = RoundedPath(r, 7))
-            using (var brush = new SolidBrush(Color.FromArgb(26, 48, 85, 128)))
-            {
-                e.Graphics.FillPath(brush, path);
-            }
-        }
-
-        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
-        {
-            e.TextColor = e.Item.Selected
-                ? ColorTranslator.FromHtml("#254267")
-                : ColorTranslator.FromHtml("#1F2937");
-            base.OnRenderItemText(e);
-        }
-
-        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
-        {
-            Rectangle r = e.Item.Bounds;
-            using (var pen = new Pen(Color.FromArgb(24, 16, 24, 40)))
-            {
-                e.Graphics.DrawLine(pen, r.Left + 12, r.Top + r.Height / 2,
-                    r.Right - 12, r.Top + r.Height / 2);
-            }
+            return false;
         }
     }
 

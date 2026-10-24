@@ -47,7 +47,7 @@ func promptURL() -> URL? {
     return normalize(field.stringValue)
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     var window: NSWindow!
     var web: WKWebView!
@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         web = WKWebView(frame: frame, configuration: cfg)
         web.autoresizingMask = [.width, .height]
         web.allowsBackForwardNavigationGestures = true
+        web.navigationDelegate = self
         window.contentView?.addSubview(web)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -92,6 +93,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
+    }
+
+    /// 网页侧边栏的「更改域名」走 zqnavgo:change，WebKit 默认会当未知协议忽略，这里拦下来
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url, url.scheme == "zqnavgo" {
+            decisionHandler(.cancel)
+            let prefix = "zqnavgo:"
+            let raw = url.absoluteString
+            let body = raw.hasPrefix(prefix) ? String(raw.dropFirst(prefix.count)) : raw
+            let text = body.removingPercentEncoding ?? body
+            if text == "change" { changeDomain(nil) }
+            return
+        }
+        decisionHandler(.allow)
     }
 
     @objc func reloadPage(_ sender: Any?) {

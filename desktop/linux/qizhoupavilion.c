@@ -155,6 +155,42 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent load_event, gpo
         webkit_web_view_run_javascript(view, MENU_JS, NULL, NULL, NULL);
 }
 
+/* 网页侧边栏的「更改域名」走 zqnavgo:change，这里拦下来 */
+static gboolean on_decide_policy(WebKitWebView *view, WebKitPolicyDecision *decision,
+                                 WebKitPolicyDecisionType type, gpointer user_data)
+{
+    (void)user_data;
+    if (type != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION)
+        return FALSE;
+
+    WebKitNavigationAction *action =
+        webkit_navigation_policy_decision_get_navigation_action(
+            WEBKIT_NAVIGATION_POLICY_DECISION(decision));
+    if (action == NULL)
+        return FALSE;
+
+    WebKitURIRequest *request = webkit_navigation_action_get_request(action);
+    const char *uri = request != NULL ? webkit_uri_request_get_uri(request) : NULL;
+    if (uri == NULL || !g_str_has_prefix(uri, "zqnavgo:"))
+        return FALSE;
+
+    webkit_policy_decision_ignore(decision);
+
+    char *decoded = g_uri_unescape_string(uri + strlen("zqnavgo:"), NULL);
+    if (decoded != NULL) {
+        if (g_strcmp0(decoded, "change") == 0) {
+            char *u = prompt_url();
+            if (u != NULL) {
+                save_url(u);
+                webkit_web_view_load_uri(view, u);
+                g_free(u);
+            }
+        }
+        g_free(decoded);
+    }
+    return TRUE;
+}
+
 static gboolean on_context_menu(WebKitWebView *view, WebKitContextMenu *menu,
                                 GdkEvent *event, WebKitHitTestResult *hit_test,
                                 gpointer user_data)
@@ -279,6 +315,7 @@ int main(int argc, char **argv)
     g_signal_connect(main_window, "key-press-event", G_CALLBACK(on_key_press), NULL);
     g_signal_connect(web_view, "load-changed", G_CALLBACK(on_load_changed), NULL);
     g_signal_connect(web_view, "context-menu", G_CALLBACK(on_context_menu), NULL);
+    g_signal_connect(web_view, "decide-policy", G_CALLBACK(on_decide_policy), NULL);
 
     webkit_web_view_load_uri(WEBKIT_WEB_VIEW(web_view), url);
     g_free(url);

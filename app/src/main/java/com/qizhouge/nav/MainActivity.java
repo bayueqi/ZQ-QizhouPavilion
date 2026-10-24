@@ -252,6 +252,11 @@ public class MainActivity extends Activity {
             if (homeUrl != null) loadHome(false);
             return true;
         }
+        // 侧边栏里的「更改域名」
+        if ("change".equals(text)) {
+            showSetupPage();
+            return true;
+        }
         if (text.startsWith("menu:")) {
             doMenuAction(text.substring(5));
             return true;
