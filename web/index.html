@@ -3,274 +3,401 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>琪舟阁 — 自建导航站的原生客户端</title>
-<meta name="description" content="琪舟阁（QizhouPavilion）是 ZQ-NAV 导航站的桌面与移动客户端，支持 Windows、macOS、Linux 与 Android。不内置浏览器内核，安装包 54 KB 起。">
+<title>琪舟阁 — ZQ-NAV 导航站的原生客户端</title>
+<meta name="description" content="琪舟阁（QizhouPavilion）是 ZQ-NAV 导航站的桌面与移动客户端，覆盖 Windows、macOS、Linux 与 Android，调用系统 WebView 渲染页面，不内置浏览器内核。">
 <meta name="theme-color" content="#ffffff">
 <link rel="icon" href="favicon.png">
 <link rel="apple-touch-icon" href="icon.webp">
-<meta property="og:title" content="琪舟阁 — 自建导航站的原生客户端">
-<meta property="og:description" content="支持 Windows、macOS、Linux 与 Android。不内置浏览器内核，安装包 54 KB 起。">
+<meta property="og:title" content="琪舟阁 — ZQ-NAV 导航站的原生客户端">
+<meta property="og:description" content="覆盖 Windows、macOS、Linux 与 Android，调用系统 WebView，安装包 54 KB 起。">
 <meta property="og:image" content="icon.webp">
 <style>
   :root {
-    --fg: #16181d;
-    --dim: #656b76;
-    --line: #e3e6ea;
-    --bg: #ffffff;
-    --soft: #f6f7f9;
-    --accent: #2f6fed;
+    --ink: #14161a;
+    --ink-2: #464c56;
+    --ink-3: #767c87;
+    --line: #e4e6ea;
+    --line-2: #eef0f3;
+    --paper: #ffffff;
+    --wash: #f7f8fa;
+    --link: #1f5fd0;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, monospace;
   }
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
   body {
     margin: 0;
-    background: var(--bg);
-    color: var(--fg);
-    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  a { color: var(--accent); text-decoration: none; }
+  a { color: var(--link); text-decoration: none; }
   a:hover { text-decoration: underline; }
   code {
-    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-    font-size: 0.92em;
+    font-family: var(--mono);
+    font-size: .9em;
     padding: 1px 5px;
-    border-radius: 4px;
-    background: var(--soft);
+    border-radius: 3px;
+    background: var(--wash);
+    color: var(--ink-2);
   }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 0 22px; }
+  h1, h2, h3 { letter-spacing: -.015em; font-weight: 600; }
+  .shell { width: 100%; max-width: 900px; margin: 0 auto; padding: 0 28px; }
 
-  .topbar { border-bottom: 1px solid var(--line); }
-  .topbar .inner {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 56px;
-  }
-  .topbar img { width: 20px; height: 20px; border-radius: 5px; }
-  .topbar .name { font-weight: 600; }
-  .topbar .tag {
-    font-size: 12px;
-    color: var(--dim);
+  /* ---------- 页头 ---------- */
+  .site-head { border-bottom: 1px solid var(--line); background: var(--paper); }
+  .head-in { display: flex; align-items: center; height: 62px; gap: 10px; }
+  .brand { display: inline-flex; align-items: baseline; gap: 9px; color: var(--ink); font-weight: 600; font-size: 16px; }
+  .brand em {
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .04em;
+    color: var(--ink-3);
     border: 1px solid var(--line);
-    border-radius: 20px;
-    padding: 0 7px;
+    border-radius: 3px;
+    padding: 0 5px;
+    line-height: 17px;
   }
-  .topbar nav { margin-left: auto; display: flex; gap: 18px; font-size: 14px; }
-  .topbar nav a { color: var(--dim); }
-  .topbar nav a:hover { color: var(--fg); text-decoration: none; }
-  .topbar nav a.keep { color: var(--fg); }
+  .site-nav { margin-left: auto; display: flex; gap: 22px; font-size: 14px; }
+  .site-nav a { color: var(--ink-2); }
+  .site-nav a:hover { color: var(--ink); text-decoration: none; }
+  .site-nav a.ext { color: var(--ink); }
 
-  .hero { padding: 64px 0 48px; }
-  .hero h1 { margin: 0; font-size: 32px; letter-spacing: -0.02em; }
-  .hero .lede { margin: 12px 0 0; color: var(--dim); max-width: 34em; }
-  .actions { display: flex; gap: 10px; margin-top: 26px; }
+  /* ---------- 首屏 ---------- */
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 56px;
+    padding: 76px 0 64px;
+    border-bottom: 1px solid var(--line);
+  }
+  .kicker {
+    margin: 0 0 14px;
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .hero h1 {
+    margin: 0;
+    font-size: 34px;
+    line-height: 1.35;
+  }
+  .lead { margin: 16px 0 0; color: var(--ink-2); }
+  .lead:first-of-type { margin-top: 20px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
   .btn {
     display: inline-block;
-    padding: 9px 18px;
-    border-radius: 7px;
+    padding: 9px 20px;
+    border-radius: 5px;
     font-size: 14px;
-    border: 1px solid var(--line);
+    border: 1px solid transparent;
   }
   .btn:hover { text-decoration: none; }
-  .btn-primary { background: var(--fg); border-color: var(--fg); color: #fff; }
-  .btn-primary:hover { opacity: .88; }
-  .btn-ghost { color: var(--fg); }
-  .btn-ghost:hover { background: var(--soft); }
+  .btn.solid { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn.solid:hover { opacity: .86; }
+  .btn.line { border-color: var(--line); color: var(--ink-2); }
+  .btn.line:hover { border-color: var(--ink-3); color: var(--ink); }
 
-  section { padding: 8px 0 40px; }
-  .sec-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
-  .sec-head h2 {
-    margin: 0;
-    font-size: 17px;
-    font-weight: 600;
-  }
-
-  table.plat { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .plat th {
-    text-align: left;
-    font-weight: 500;
+  .hero-spec { align-self: start; border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; }
+  .hero-spec h2 {
+    margin: 0 0 10px;
     font-size: 12px;
-    color: var(--dim);
-    padding: 0 10px 8px 0;
-    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
   }
-  .plat td { padding: 12px 10px 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .plat tr:last-child td { border-bottom: 0; }
-  .plat .os { font-weight: 600; white-space: nowrap; }
-  .plat .req { color: var(--dim); }
-  .plat .pkg {
-    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-    font-size: 12.5px;
-    color: var(--dim);
-    word-break: break-all;
-  }
-  .plat .size { white-space: nowrap; color: var(--dim); }
-  .plat .get { text-align: right; white-space: nowrap; }
-
-  .dl-note { margin: 14px 0 0; font-size: 13.5px; color: var(--dim); }
-
-  dl.req { margin: 18px 0 0; }
-  dl.req > div {
-    display: flex;
-    gap: 14px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--line);
-    font-size: 14px;
-  }
-  dl.req > div:last-child { border-bottom: 0; }
-  dl.req dt { width: 74px; flex: none; color: var(--dim); }
-  dl.req dd { margin: 0; }
-
-  .log { border-left: 2px solid var(--line); padding-left: 18px; }
-  .log-head { display: flex; align-items: baseline; gap: 10px; }
-  .log-head b { font-size: 15px; }
-  .log-head span { font-size: 13px; color: var(--dim); }
-  .log ul { margin: 8px 0 0; padding-left: 18px; color: var(--dim); font-size: 14px; }
-  .log li { margin: 3px 0; }
-
-  footer { border-top: 1px solid var(--line); margin-top: 20px; padding: 22px 0 40px; }
-  .copyright {
+  .hero-spec dl { margin: 0; }
+  .hero-spec dl > div {
     display: flex;
     justify-content: space-between;
     gap: 14px;
-    flex-wrap: wrap;
-    font-size: 13px;
-    color: var(--dim);
+    padding: 8px 0;
+    border-top: 1px solid var(--line-2);
+    font-size: 13.5px;
   }
-  .copyright a { color: var(--dim); }
-  .copyright a:hover { color: var(--fg); }
+  .hero-spec dt { color: var(--ink-3); flex: none; }
+  .hero-spec dd { margin: 0; text-align: right; color: var(--ink-2); }
 
+  /* ---------- 通用区块 ---------- */
+  .block { padding: 60px 0; border-bottom: 1px solid var(--line); }
+  .block-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 26px; }
+  .block-head h2 { margin: 0; font-size: 20px; flex: none; }
+  .block-head p { margin: 0; color: var(--ink-3); font-size: 13.5px; }
+
+  /* ---------- 下载卡片 ---------- */
+  .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 20px;
+    transition: border-color .15s;
+  }
+  .card:hover { border-color: #c9ced6; }
+  .card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .card-os { font-size: 15px; font-weight: 600; }
+  .card-size { font-size: 12.5px; color: var(--ink-3); font-family: var(--mono); }
+  .card-req { margin: 8px 0 0; font-size: 13px; color: var(--ink-2); min-height: 3.2em; }
+  .card-file {
+    margin: 10px 0 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    word-break: break-all;
+  }
+  .card-get {
+    margin-top: auto;
+    align-self: flex-start;
+    font-size: 13.5px;
+    border-bottom: 1px solid currentColor;
+    line-height: 1.6;
+  }
+  .card-get:hover { text-decoration: none; opacity: .7; }
+
+  /* ---------- 步骤 ---------- */
+  .steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  .steps > li {
+    position: relative;
+    counter-increment: step;
+    padding: 0 0 26px 46px;
+    border-left: 1px solid var(--line-2);
+    margin-left: 9px;
+  }
+  .steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  .steps > li::before {
+    content: "0" counter(step);
+    position: absolute;
+    left: -9px;
+    top: 0;
+    width: 18px;
+    height: 18px;
+    background: var(--paper);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    text-align: center;
+    line-height: 18px;
+  }
+  .steps h3 { margin: 0; font-size: 15px; }
+  .steps p { margin: 6px 0 0; font-size: 14px; color: var(--ink-2); }
+
+  .menu-ref { margin-top: 34px; border-top: 1px solid var(--line-2); padding-top: 22px; }
+  .menu-ref h3 { margin: 0 0 12px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .menu-ref dl { margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .menu-ref dl > div { border: 1px solid var(--line-2); border-radius: 5px; padding: 12px 14px; }
+  .menu-ref dt { font-size: 13.5px; font-weight: 600; }
+  .menu-ref dd { margin: 4px 0 0; font-size: 13px; color: var(--ink-2); }
+  .note { margin: 16px 0 0; font-size: 13px; color: var(--ink-3); }
+
+  /* ---------- 更新日志 ---------- */
+  .release { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 28px; }
+  .release-meta { display: flex; flex-direction: column; gap: 2px; }
+  .ver { font-family: var(--mono); font-size: 15px; font-weight: 600; }
+  .date { font-size: 12.5px; color: var(--ink-3); font-family: var(--mono); }
+  .release ul { margin: 0; padding-left: 17px; font-size: 14px; color: var(--ink-2); }
+  .release li { margin: 0 0 5px; }
+  .release li:last-child { margin-bottom: 0; }
+
+  /* ---------- 页脚 ---------- */
+  .site-foot { padding: 30px 0 56px; }
+  .foot-in {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+  .foot-in p { margin: 0; }
+  .foot-in nav { display: flex; gap: 18px; }
+  .foot-in nav a { color: var(--ink-3); }
+  .foot-in nav a:hover { color: var(--ink); }
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width: 820px) {
+    .hero { grid-template-columns: 1fr; gap: 34px; padding: 48px 0 44px; }
+    .hero h1 { font-size: 27px; }
+    .hero-spec dl > div { font-size: 13px; }
+    .menu-ref dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .release { grid-template-columns: 1fr; gap: 10px; }
+    .release-meta { flex-direction: row; align-items: baseline; gap: 10px; }
+  }
   @media (max-width: 600px) {
-    .wrap { padding: 0 16px; }
-    .hero { padding: 40px 0 34px; }
-    .hero h1 { font-size: 26px; }
-    .plat .req, .plat .size { display: none; }
-    .plat thead th:nth-child(2), .plat thead th:nth-child(4) { display: none; }
-    .copyright { flex-direction: column; gap: 6px; }
+    .shell { padding: 0 18px; }
+    .block { padding: 44px 0; }
+    .cards { grid-template-columns: 1fr; }
+    .card-req { min-height: 0; }
+    .site-nav { gap: 14px; font-size: 13px; }
+    .block-head { flex-direction: column; gap: 4px; }
   }
 </style>
 </head>
 <body>
 
-<div class="topbar">
-  <div class="wrap inner">
-    <img src="icon.webp" alt="">
-    <span class="name">琪舟阁</span>
-    <span class="tag">v1.0.1</span>
-    <nav>
+<header class="site-head">
+  <div class="shell head-in">
+    <a class="brand" href="#top">琪舟阁<em>1.0.1</em></a>
+    <nav class="site-nav">
       <a href="#download">下载</a>
-      <a href="#usage">用法</a>
+      <a href="#usage">使用</a>
       <a href="#changelog">更新日志</a>
-      <a class="keep" href="https://github.com/bayueqi/ZQ-QizhouPavilion">GitHub</a>
+      <a class="ext" href="https://github.com/bayueqi/ZQ-QizhouPavilion">GitHub</a>
     </nav>
   </div>
-</div>
+</header>
 
-<div class="wrap">
+<main id="top">
 
-  <div class="hero">
-    <h1>琪舟阁</h1>
-    <p class="lede">
-      <a href="https://github.com/bayueqi/ZQ-NAV">ZQ-NAV</a> 导航站的客户端，Windows、macOS、Linux、Android 各一个。
-      先部署一个 ZQ-NAV 拿到域名，再用它打开。
-    </p>
-    <div class="actions">
-      <a class="btn btn-primary" href="#download">下载</a>
-      <a class="btn btn-ghost" href="https://github.com/bayueqi/ZQ-QizhouPavilion">源码</a>
-    </div>
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <p class="kicker">ZQ-NAV 客户端</p>
+        <h1>在桌面上打开自己的导航站</h1>
+        <p class="lead">
+          琪舟阁是 <a href="https://github.com/bayueqi/ZQ-NAV">ZQ-NAV</a> 导航站的客户端外壳，覆盖 Windows、macOS、Linux 与 Android。
+          各平台通过系统自带的 WebView 渲染页面，程序内不包含浏览器内核。
+        </p>
+        <p class="lead">
+          站点内容与数据由使用者自行部署的 ZQ-NAV 实例提供，客户端仅负责显示与导航，不附带任何预置站点。
+        </p>
+        <div class="cta">
+          <a class="btn solid" href="#download">选择平台下载</a>
+          <a class="btn line" href="https://github.com/bayueqi/ZQ-QizhouPavilion">查看源码</a>
+        </div>
+      </div>
+      <aside class="hero-spec">
+        <h2>概要</h2>
+        <dl>
+          <div><dt>支持平台</dt><dd>四个</dd></div>
+          <div><dt>渲染方式</dt><dd>系统 WebView</dd></div>
+          <div><dt>安装包</dt><dd>54 KB – 872 KB</dd></div>
+          <div><dt>初始化</dt><dd>首次启动填写域名</dd></div>
+        </dl>
+      </aside>
+    </section>
+
+    <section class="block" id="download">
+      <div class="block-head">
+        <h2>下载</h2>
+        <p>四个平台各自独立发行，按需取用。</p>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <div class="card-top">
+            <span class="card-os">Windows</span>
+            <span class="card-size">506 KB</span>
+          </div>
+          <p class="card-req">Windows 10 (1903) 及以上，x64。依赖 WebView2 运行时，Windows 11 已内置。</p>
+          <p class="card-file">QizhouPavilion-windows-x64.zip</p>
+          <a class="card-get" href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-windows-x64.zip">下载</a>
+        </article>
+        <article class="card">
+          <div class="card-top">
+            <span class="card-os">macOS</span>
+            <span class="card-size">872 KB</span>
+          </div>
+          <p class="card-req">macOS 11.0 及以上。发行包未经公证，首次打开需右键选择「打开」。</p>
+          <p class="card-file">QizhouPavilion-macos.zip</p>
+          <a class="card-get" href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-macos.zip">下载</a>
+        </article>
+        <article class="card">
+          <div class="card-top">
+            <span class="card-os">Linux</span>
+            <span class="card-size">54 KB</span>
+          </div>
+          <p class="card-req">x86_64，需 GTK 3 与 WebKit2GTK 4.1。解压后运行 <code>./qizhoupavilion</code>。</p>
+          <p class="card-file">QizhouPavilion-linux-x86_64.tar.gz</p>
+          <a class="card-get" href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-linux-x86_64.tar.gz">下载</a>
+        </article>
+        <article class="card">
+          <div class="card-top">
+            <span class="card-os">Android</span>
+            <span class="card-size">276 KB</span>
+          </div>
+          <p class="card-req">Android 7.0 (API 24) 及以上。直接安装 APK，无需额外运行时。</p>
+          <p class="card-file">QizhouPavilion-android.apk</p>
+          <a class="card-get" href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-android.apk">下载</a>
+        </article>
+      </div>
+    </section>
+
+    <section class="block" id="usage">
+      <div class="block-head">
+        <h2>使用</h2>
+        <p>客户端不携带站点数据，使用前需要一个可访问的 ZQ-NAV 实例。</p>
+      </div>
+      <ol class="steps">
+        <li>
+          <h3>部署 ZQ-NAV</h3>
+          <p>
+            先在 Cloudflare Workers 上部署 <a href="https://github.com/bayueqi/ZQ-NAV">ZQ-NAV</a>，取得该实例的访问域名，例如 <code>nav.example.com</code>。
+            这一步在客户端之外完成，客户端不提供建站功能。
+          </p>
+        </li>
+        <li>
+          <h3>首次启动填写域名</h3>
+          <p>
+            打开客户端，在输入框中填入上一步得到的域名，不需要自行补充 <code>https://</code>。
+            填写结果保存在本地，之后启动直接进入站点。填错时可从错误页重新填写。
+          </p>
+        </li>
+        <li>
+          <h3>通过菜单调用功能</h3>
+          <p>
+            书签与站内链接均在客户端窗口内打开，不跳转系统浏览器。刷新、全屏、更换域名等操作统一放在菜单中。
+          </p>
+        </li>
+      </ol>
+      <div class="menu-ref">
+        <h3>菜单入口</h3>
+        <dl>
+          <div><dt>Windows</dt><dd>在网页区域右键</dd></div>
+          <div><dt>macOS</dt><dd>屏幕顶部菜单栏</dd></div>
+          <div><dt>Linux</dt><dd>右键，或标题栏右侧 ☰</dd></div>
+          <div><dt>Android</dt><dd>长按屏幕</dd></div>
+        </dl>
+        <p class="note">四个平台的菜单项一致：刷新、全屏、更换域名、后退上一页、前进下一页、返回主页面。</p>
+      </div>
+    </section>
+
+    <section class="block" id="changelog">
+      <div class="block-head">
+        <h2>更新日志</h2>
+        <p>仅记录对外可见的变更。</p>
+      </div>
+      <div class="release">
+        <div class="release-meta">
+          <span class="ver">1.0.1</span>
+          <span class="date">2026-10-24</span>
+        </div>
+        <ul>
+          <li>菜单统一为刷新、全屏、更换域名、后退上一页、前进下一页、返回主页面</li>
+          <li>补充前进、后退与全屏能力，四个平台保持一致</li>
+          <li>域名填写错误时可直接从错误页重新填写</li>
+          <li>发行包与可执行文件统一使用 QizhouPavilion 命名</li>
+          <li>Android 图标改用 WebP，开启 R8 压缩，安装包 276 KB</li>
+        </ul>
+      </div>
+    </section>
   </div>
 
-  <section id="download">
-    <div class="sec-head">
-      <h2>下载</h2>
-    </div>
-    <table class="plat">
-      <thead>
-        <tr>
-          <th>平台</th>
-          <th>最低要求</th>
-          <th>发行包</th>
-          <th>大小</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="os">Windows</td>
-          <td class="req">10 (1903) 及以上，x64</td>
-          <td class="pkg">QizhouPavilion-windows-x64.zip</td>
-          <td class="size">506 KB</td>
-          <td class="get"><a href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-windows-x64.zip">下载</a></td>
-        </tr>
-        <tr>
-          <td class="os">macOS</td>
-          <td class="req">11.0 及以上</td>
-          <td class="pkg">QizhouPavilion-macos.zip</td>
-          <td class="size">872 KB</td>
-          <td class="get"><a href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-macos.zip">下载</a></td>
-        </tr>
-        <tr>
-          <td class="os">Linux</td>
-          <td class="req">x86_64，GTK 3 / WebKit2GTK 4.1</td>
-          <td class="pkg">QizhouPavilion-linux-x86_64.tar.gz</td>
-          <td class="size">54 KB</td>
-          <td class="get"><a href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-linux-x86_64.tar.gz">下载</a></td>
-        </tr>
-        <tr>
-          <td class="os">Android</td>
-          <td class="req">7.0 (API 24) 及以上</td>
-          <td class="pkg">QizhouPavilion-android.apk</td>
-          <td class="size">276 KB</td>
-          <td class="get"><a href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-android.apk">下载</a></td>
-        </tr>
-      </tbody>
-    </table>
-    <p class="dl-note">Windows 和 Linux 解压就能运行，不用安装。macOS 包没有公证，第一次打开要右键「打开」。</p>
-  </section>
+</main>
 
-  <section id="usage">
-    <div class="sec-head">
-      <h2>用法</h2>
-    </div>
-    <p>第一次打开填导航站域名，不用打 <code>https://</code>。之后启动直接进站，点书签在当前窗口打开，不跳系统浏览器。</p>
-    <dl class="req">
-      <div><dt>Windows</dt><dd>在网页里右键</dd></div>
-      <div><dt>macOS</dt><dd>屏幕顶部的菜单栏</dd></div>
-      <div><dt>Linux</dt><dd>右键，或标题栏右边的 ☰</dd></div>
-      <div><dt>Android</dt><dd>长按屏幕</dd></div>
-    </dl>
-    <p class="dl-note">菜单里是刷新、全屏、更换域名、后退上一页、前进下一页、返回主页面。</p>
-  </section>
-
-  <section id="changelog">
-    <div class="sec-head">
-      <h2>更新日志</h2>
-    </div>
-    <div class="log">
-      <div class="log-head"><b>1.0.1</b><span>2026-10-24</span></div>
-      <ul>
-        <li>菜单为刷新、全屏、更换域名、后退上一页、前进下一页、返回主页面</li>
-        <li>新增 Windows、Linux、macOS 三套外壳</li>
-        <li>包名统一为 QizhouPavilion</li>
-        <li>Android 图标改用 WebP，开启 R8 压缩，安装包 276 KB</li>
-        <li>修复部分站点在客户端内打不开的问题</li>
-      </ul>
-    </div>
-  </section>
-
-  <footer>
-    <div class="copyright">
-      <span>© 2026 琪舟阁</span>
-      <span>
-        <a href="https://github.com/bayueqi/ZQ-QizhouPavilion">客户端仓库</a> ·
-        <a href="https://github.com/bayueqi/ZQ-NAV">服务端仓库</a> ·
-        <a href="https://github.com/bayueqi/ZQ-QizhouPavilion/issues">反馈</a>
-      </span>
-    </div>
-  </footer>
-
-</div>
+<footer class="site-foot">
+  <div class="shell foot-in">
+    <p>© 2026 琪舟阁</p>
+    <nav>
+      <a href="https://github.com/bayueqi/ZQ-QizhouPavilion">客户端仓库</a>
+      <a href="https://github.com/bayueqi/ZQ-NAV">服务端仓库</a>
+      <a href="https://github.com/bayueqi/ZQ-QizhouPavilion/issues">问题反馈</a>
+    </nav>
+  </div>
+</footer>
 
 </body>
 </html>
