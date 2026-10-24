@@ -105,7 +105,7 @@ namespace QizhouPavilion
         {
             if (!coreReady) return;
             CoreWebView2Environment env = web.CoreWebView2.Environment;
-            CoreWebView2ContextMenuItemCollection items = e.MenuItems;
+            var items = e.MenuItems;
 
             CoreWebView2ContextMenuItem change =
                 env.CreateContextMenuItem("更换导航站域名", null, CoreWebView2ContextMenuItemKind.Command);
