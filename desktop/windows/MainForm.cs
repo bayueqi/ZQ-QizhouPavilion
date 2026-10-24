@@ -13,14 +13,18 @@ namespace QizhouPavilion
     {
         private readonly WebView2 web = new WebView2();
         private readonly string startUrl;
+        private string menuJs;
         private bool coreReady;
         private bool inSetup;
+        private bool menuReady;
 
         public MainForm(string url)
         {
             startUrl = url;
             Text = "琪舟阁";
-            AutoScaleMode = AutoScaleMode.Dpi;
+            // 不能再叠加 WinForms 的自动缩放：PerMonitorV2 下它会二次缩放控件，
+            // 导致 WebView2 的 bounds 与实际客户区不一致，鼠标点击整体偏移。
+            AutoScaleMode = AutoScaleMode.None;
             BackColor = ColorTranslator.FromHtml("#FDF8F3");
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(560, 420);
@@ -36,6 +40,14 @@ namespace QizhouPavilion
             KeyPreview = true;
             KeyDown += OnKeyDown;
             Shown += OnShown;
+            ClientSizeChanged += OnClientSizeChanged;
+        }
+
+        /** 尺寸变化时把 WebView2 的 bounds 钉死在客户区，避免残留旧尺寸导致点击命中错位。 */
+        private void OnClientSizeChanged(object sender, EventArgs e)
+        {
+            if (web == null) return;
+            web.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
         }
 
         private async void OnShown(object sender, EventArgs e)
@@ -83,7 +95,7 @@ namespace QizhouPavilion
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
 
             // 自绘右键菜单，替掉 WebView2 自带的英文原生菜单
-            string menuJs = Resources.Load("menu.js");
+            menuJs = Resources.Load("menu.js");
             if (menuJs != null)
             {
                 await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(menuJs);
@@ -91,6 +103,7 @@ namespace QizhouPavilion
 
             web.CoreWebView2.WebMessageReceived += OnWebMessage;
             web.CoreWebView2.ContextMenuRequested += OnContextMenu;
+            web.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
             // target=_blank 的链接也在当前窗口打开
             web.CoreWebView2.NewWindowRequested += (s, e) =>
             {
@@ -122,9 +135,29 @@ namespace QizhouPavilion
             web.CoreWebView2.NavigateToString(html);
         }
 
+        /**
+         * document-created 阶段注入的那次可能因为还没有根元素而没建起来，这里补一次。
+         * menu.js 自身有幂等判断，重复执行没有副作用。
+         */
+        private async void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (inSetup || menuJs == null || !coreReady) return;
+            try
+            {
+                string result = await web.CoreWebView2.ExecuteScriptAsync(
+                    menuJs + ";typeof window.__zqMenu;");
+                menuReady = result != null && result.IndexOf("object", StringComparison.Ordinal) >= 0;
+            }
+            catch
+            {
+                menuReady = false;
+            }
+        }
+
         private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
         {
-            if (!coreReady || inSetup) return;
+            // 菜单没建起来就放行原生菜单，宁可丑也别点了没反应
+            if (!coreReady || inSetup || !menuReady) return;
             e.Handled = true;
             Point p = e.Location;
             try
