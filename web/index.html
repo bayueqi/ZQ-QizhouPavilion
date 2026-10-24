@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>琪舟阁 · QizhouPavilion</title>
+<meta name="description" content="琪舟阁 —— 给自建导航站做的轻量原生外壳，支持 Windows / Android / macOS / Linux，最小的安装包只有 55 KB。">
+<meta name="theme-color" content="#FDF8F3">
+<link rel="icon" href="favicon.png">
+<link rel="apple-touch-icon" href="icon.webp">
+<meta property="og:title" content="琪舟阁 · QizhouPavilion">
+<meta property="og:description" content="把你自己部署的导航站，装进一个轻量原生外壳。">
+<meta property="og:image" content="icon.webp">
+<style>
+  :root {
+    --bg: #fdf8f3;
+    --ink: #2d3748;
+    --muted: #6b7280;
+    --line: #e9e2d9;
+    --brand: #305580;
+    --brand-soft: #eaf0f7;
+    --card: #fffdfa;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+
+  /* 顶栏 */
+  header { padding: 28px 0 0; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand img { width: 40px; height: 40px; border-radius: 10px; }
+  .brand b { font-size: 17px; letter-spacing: .01em; }
+  .brand span { color: var(--muted); font-size: 12px; letter-spacing: .12em; }
+  .ver {
+    margin-left: auto; font-size: 12px; color: var(--muted);
+    border: 1px solid var(--line); background: var(--card);
+    padding: 3px 10px; border-radius: 999px;
+  }
+
+  /* 主视觉 */
+  .hero { padding: 56px 0 8px; }
+  .hero h1 {
+    margin: 0 0 14px; font-size: 40px; line-height: 1.25;
+    font-weight: 600; letter-spacing: -0.01em;
+  }
+  .hero p {
+    margin: 0; max-width: 560px; color: #4a5568; font-size: 16px;
+  }
+  .hero .note {
+    margin-top: 22px; font-size: 13.5px; color: var(--muted);
+    padding-left: 14px; border-left: 2px solid var(--line);
+  }
+
+  /* 区块标题 */
+  h2 {
+    margin: 0 0 16px; font-size: 13px; font-weight: 600;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+  }
+  section { padding: 44px 0 0; }
+
+  /* 下载卡片 */
+  .dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .dl a.card {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 18px; background: var(--card);
+    border: 1px solid var(--line); border-radius: 12px;
+    color: inherit; transition: border-color .18s, transform .18s, box-shadow .18s;
+  }
+  .dl a.card:hover {
+    text-decoration: none; border-color: #cfc4b4;
+    transform: translateY(-1px); box-shadow: 0 6px 18px rgba(48, 85, 128, .07);
+  }
+  .dl .os { flex: 1; min-width: 0; }
+  .dl .os b { display: block; font-size: 14.5px; font-weight: 600; }
+  .dl .os small {
+    display: block; color: var(--muted); font-size: 12.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .dl .sz {
+    font-size: 12.5px; color: var(--brand); background: var(--brand-soft);
+    padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+  }
+  .dl .arrow { color: #b9b0a4; font-size: 15px; }
+
+  /* 特性 */
+  .feat { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 26px; }
+  .feat div { padding-left: 16px; border-left: 2px solid var(--line); }
+  .feat b { display: block; font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+  .feat p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+  /* 步骤 */
+  ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+  ol.steps li {
+    counter-increment: s; position: relative;
+    padding: 0 0 14px 34px; font-size: 14px;
+  }
+  ol.steps li::before {
+    content: counter(s); position: absolute; left: 0; top: 1px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--brand-soft); color: var(--brand);
+    font-size: 12px; font-weight: 600; text-align: center; line-height: 22px;
+  }
+  ol.steps small { color: var(--muted); }
+
+  /* 页脚 */
+  footer {
+    margin-top: 56px; padding: 24px 0 40px;
+    border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--muted);
+    display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
+  }
+  footer .sp { margin-left: auto; }
+
+  @media (max-width: 640px) {
+    .hero { padding: 36px 0 4px; }
+    .hero h1 { font-size: 30px; }
+    .hero p { font-size: 15px; }
+    .dl, .feat { grid-template-columns: 1fr; }
+    section { padding: 34px 0 0; }
+    footer { flex-direction: column; align-items: flex-start; }
+    footer .sp { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <img src="icon.webp" alt="琪舟阁">
+      <div>
+        <b>琪舟阁</b><br>
+        <span>QIZHOU PAVILION</span>
+      </div>
+      <span class="ver">v1.0.1</span>
+    </div>
+  </header>
+
+  <div class="hero">
+    <h1>把导航站，装进一个原生外壳</h1>
+    <p>给自建导航站做的桌面与手机客户端。输入你的域名就能进站，书签在软件内打开，不用来回切浏览器。</p>
+    <p class="note">不打包浏览器内核，直接调用系统自带的。所以 Android 版 276 KB，Linux 版只有 55 KB。</p>
+  </div>
+
+  <section>
+    <h2>下载</h2>
+    <div class="dl">
+      <a class="card" href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-windows-x64.zip">
+        <div class="os"><b>Windows</b><small>解压双击即可，无需安装运行时</small></div>
+        <span class="sz">507 KB</span><span class="arrow">↓</span>
+      </a>
+      <a class="card" href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-android.apk">
+        <div class="os"><b>Android</b><small>直接安装，需要 7.0 以上</small></div>
+        <span class="sz">276 KB</span><span class="arrow">↓</span>
+      </a>
+      <a class="card" href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-macos.zip">
+        <div class="os"><b>macOS</b><small>解压后拖入「应用程序」</small></div>
+        <span class="sz">871 KB</span><span class="arrow">↓</span>
+      </a>
+      <a class="card" href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavilion-linux-x86_64.tar.gz">
+        <div class="os"><b>Linux x86_64</b><small>需要 GTK3 与 WebKit2GTK</small></div>
+        <span class="sz">55 KB</span><span class="arrow">↓</span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>它做什么</h2>
+    <div class="feat">
+      <div>
+        <b>首次填域名，之后直接进站</b>
+        <p>只在第一次打开时问你的导航站地址，记住以后就不再打扰。</p>
+      </div>
+      <div>
+        <b>书签在软件内打开</b>
+        <p>点站里的任意链接都在窗内跳转，不甩到系统浏览器里。</p>
+      </div>
+      <div>
+        <b>侧边栏一键换域名</b>
+        <p>「后台管理」下面多一项「更改域名」，换站不用卸载重装。</p>
+      </div>
+      <div>
+        <b>登录状态会记住</b>
+        <p>Cookie 存在软件自己的目录里，下次进来还是登录着的。</p>
+      </div>
+      <div>
+        <b>返回主页面随手可得</b>
+        <p>电脑右键菜单 / 手机长按屏幕，一步回到导航首页。</p>
+      </div>
+      <div>
+        <b>安装包就是全部</b>
+        <p>配置和缓存都写在程序旁边，卸载时整个文件夹删掉即可。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>怎么用</h2>
+    <ol class="steps">
+      <li>下载对应平台的压缩包，解压。<br><small>Android 直接装 APK，不需要解压。</small></li>
+      <li>打开软件，输入你自己部署的导航站域名。<br><small>例如 <code>nav.example.com</code>，不用写 https://</small></li>
+      <li>回车进站，之后每次打开都直接是导航页。</li>
+    </ol>
+  </section>
+
+  <footer>
+    <a href="https://github.com/bayueqi/ZQ-QizhouPavilion">GitHub 仓库</a>
+    <a href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases">全部版本</a>
+    <a href="https://nav.520jk.cc.cd">琪舟阁导航</a>
+    <span class="sp">MIT · 自用软件，按需取用</span>
+  </footer>
+
+</div>
+
+</body>
+</html>
