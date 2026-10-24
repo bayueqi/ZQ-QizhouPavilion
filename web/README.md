@@ -69,12 +69,14 @@ https://github.com/bayueqi/ZQ-QizhouPavilion/releases/latest/download/QizhouPavi
 
 | 内容 | 位置 |
 | --- | --- |
-| 大标题与简介 | `.hero h1`、`.hero .lede` |
-| 版本信息行 | `.hero .meta` |
+| 大标题、副标题 | `.hero h1`、`.hero .lede` |
+| 按钮下方的小字 | `.hero .facts` |
+| 界面预览窗 | `.preview` 里的 `.win`（纯 CSS 画的，改侧边栏文字找 `.win-side`，改卡片找 `.win-card`） |
+| 组成部分 / 功能 | `<div class="cols">` 里成对的 `<div class="item">` |
 | 下载表格 | `table.plat` 的 `<tbody>`，每行一个平台 |
-| 功能六条 | `<div class="feat">` 里成对的 `<h3>` + `<p>` |
-| 系统要求 | `<ul class="req-list">` |
+| 系统要求 | `<dl class="req">` 里成对的 `<dt>` + `<dd>` |
 | 更新日志 | `<div class="log">` |
+| 页脚三栏 | `<div class="foot-grid">` |
 
 ### 加一个平台
 
