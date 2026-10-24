@@ -2,20 +2,24 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.WinForms;
 
 namespace QizhouPavilion
 {
+    /**
+     * 不再使用 WinForms 的 WebView2 控件：
+     * 那个封装层会按 DIP 换算 controller 的 bounds，窗口不是最大化时它和真实客户区对不上，
+     * 表现就是"画面在上面的位置，点击却落到别处"。
+     * 这里直接拿 CoreWebView2Controller，绑定窗体 HWND，并用 UseRawPixels 让它按物理像素走。
+     */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "build 9";
+        private const string BuildTag = "build 10";
 
-        private readonly WebView2 web = new WebView2();
         private readonly string startUrl;
+        private CoreWebView2Controller controller;
+        private CoreWebView2 core;
         private bool coreReady;
         private bool inSetup;
 
@@ -23,8 +27,6 @@ namespace QizhouPavilion
         {
             startUrl = url;
             Text = "琪舟阁  v1.0.1 " + BuildTag;
-            // 不要叠加 WinForms 的自动缩放：DPI 由 manifest / app.config 统一声明为 SystemAware，
-            // 这里再缩放一次会让 WebView2 的 bounds 与客户区不一致，点击整体偏移。
             AutoScaleMode = AutoScaleMode.None;
             BackColor = ColorTranslator.FromHtml("#FDF8F3");
             StartPosition = FormStartPosition.CenterScreen;
@@ -35,19 +37,22 @@ namespace QizhouPavilion
                 Math.Max(460, Math.Min(820, (int)(wa.Height * 0.86))));
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-            web.Dock = DockStyle.Fill;
-            Controls.Add(web);
-            KeyPreview = true;
-            KeyDown += OnKeyDown;
+            Resize += delegate { SyncBounds(); };
             Shown += OnShown;
-            ClientSizeChanged += OnClientSizeChanged;
         }
 
-        /** 尺寸一变就把 WebView2 的 bounds 钉死在客户区，避免命中区域还停在旧尺寸。 */
-        private void OnClientSizeChanged(object sender, EventArgs e)
+        /** 把 WebView 的显示区域钉死在客户区（物理像素）。 */
+        private void SyncBounds()
         {
-            if (web == null) return;
-            web.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
+            if (controller == null) return;
+            if (WindowState == FormWindowState.Minimized) return;
+            try
+            {
+                controller.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
+            }
+            catch
+            {
+            }
         }
 
         private async void OnShown(object sender, EventArgs e)
@@ -62,7 +67,7 @@ namespace QizhouPavilion
             }
         }
 
-        private async Task InitAsync()
+        private async System.Threading.Tasks.Task InitAsync()
         {
             string url = startUrl;
             if (string.IsNullOrWhiteSpace(url)) url = Config.Load();
@@ -84,19 +89,26 @@ namespace QizhouPavilion
                 return;
             }
 
-            await web.EnsureCoreWebView2Async(env);
+            controller = await env.CreateCoreWebView2ControllerAsync(Handle);
+            // 关键：bounds 用物理像素，避免 DIP 换算带来的点击偏移
+            controller.BoundsMode = CoreWebView2BoundsMode.UseRawPixels;
+            controller.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
+            controller.IsVisible = true;
+            controller.AcceleratorKeyPressed += OnAcceleratorKey;
+
+            core = controller.CoreWebView2;
             coreReady = true;
 
-            CoreWebView2Settings st = web.CoreWebView2.Settings;
+            CoreWebView2Settings st = core.Settings;
             st.IsStatusBarEnabled = false;
             st.AreDevToolsEnabled = false;
             st.IsZoomControlEnabled = true;
             string ua = st.UserAgent;
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
 
-            web.CoreWebView2.WebMessageReceived += OnWebMessage;
-            web.CoreWebView2.ContextMenuRequested += OnContextMenu;
-            web.CoreWebView2.NewWindowRequested += (s, e) =>
+            core.WebMessageReceived += OnWebMessage;
+            core.ContextMenuRequested += OnContextMenu;
+            core.NewWindowRequested += (s, e) =>
             {
                 e.Handled = true;
                 NavigateTo(e.Uri);
@@ -110,8 +122,8 @@ namespace QizhouPavilion
         {
             if (!coreReady) return;
             inSetup = false;
-            web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-            web.CoreWebView2.Navigate(url);
+            core.Settings.AreDefaultContextMenusEnabled = false;
+            core.Navigate(url);
         }
 
         private void ShowSetupPage(string current)
@@ -121,14 +133,10 @@ namespace QizhouPavilion
             if (html == null) return;
             inSetup = true;
             // 欢迎页放行原生菜单，否则输入框里没法右键粘贴域名
-            web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
-            web.CoreWebView2.NavigateToString(html);
+            core.Settings.AreDefaultContextMenusEnabled = true;
+            core.NavigateToString(html);
         }
 
-        /**
-         * 右键菜单用 WinForms 自绘，不依赖往网页里注入脚本 —— 注入这种方式在某些页面上会失败，
-         * 失败时表现为"点了右键什么都没发生"。
-         */
         private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
         {
             if (!coreReady || inSetup) return;
@@ -146,16 +154,15 @@ namespace QizhouPavilion
             menu.Font = new Font("Microsoft YaHei UI", 9.5F);
             menu.Padding = new Padding(0, 6, 0, 6);
             menu.DropShadowEnabled = true;
-            menu.AutoClose = true;
 
             AddItem(menu, "更换导航站域名", delegate { ShowSetupPage(Config.Load()); });
             AddItem(menu, "后退", delegate
             {
-                if (web.CoreWebView2 != null && web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
+                if (core != null && core.CanGoBack) core.GoBack();
             });
             AddItem(menu, "刷新", delegate
             {
-                if (web.CoreWebView2 != null) web.CoreWebView2.Reload();
+                if (core != null) core.Reload();
             });
             menu.Items.Add(new ToolStripSeparator());
             AddItem(menu, "退出琪舟阁", delegate { Close(); });
@@ -175,7 +182,7 @@ namespace QizhouPavilion
                 }
             };
 
-            menu.Show(web, p);
+            menu.Show(this, p);
         }
 
         private static void AddItem(ContextMenuStrip menu, string text, EventHandler onClick)
@@ -184,6 +191,37 @@ namespace QizhouPavilion
             item.Padding = new Padding(14, 5, 14, 5);
             item.Click += onClick;
             menu.Items.Add(item);
+        }
+
+        /** 键盘焦点在网页里时 Form.KeyDown 收不到，只能从 controller 这一层拦。 */
+        private void OnAcceleratorKey(object sender, CoreWebView2AcceleratorKeyPressedEventArgs e)
+        {
+            if (e.KeyEventKind != CoreWebView2KeyEventKind.KeyDown &&
+                e.KeyEventKind != CoreWebView2KeyEventKind.SystemKeyDown) return;
+
+            Keys key = (Keys)e.VirtualKey;
+            Keys mods = ModifierKeys;
+
+            if (key == Keys.D && (mods & Keys.Control) == Keys.Control && (mods & Keys.Shift) == Keys.Shift)
+            {
+                ShowDiagnostics();
+                e.Handled = true;
+            }
+            else if (key == Keys.F5 || (key == Keys.R && (mods & Keys.Control) == Keys.Control))
+            {
+                if (core != null) core.Reload();
+                e.Handled = true;
+            }
+            else if (key == Keys.L && (mods & Keys.Control) == Keys.Control)
+            {
+                ShowSetupPage(Config.Load());
+                e.Handled = true;
+            }
+            else if (key == Keys.Left && (mods & Keys.Alt) == Keys.Alt)
+            {
+                if (core != null && core.CanGoBack) core.GoBack();
+                e.Handled = true;
+            }
         }
 
         private void OnWebMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -207,47 +245,20 @@ namespace QizhouPavilion
             NavigateTo(url);
         }
 
-        private void OnKeyDown(object sender, KeyEventArgs e)
-        {
-            if (!coreReady) return;
-            if (e.Control && e.Shift && e.KeyCode == Keys.D)
-            {
-                ShowDiagnostics();
-                e.Handled = true;
-            }
-            else if (e.KeyCode == Keys.F5 || (e.Control && e.KeyCode == Keys.R))
-            {
-                web.CoreWebView2.Reload();
-                e.Handled = true;
-            }
-            else if (e.Control && e.KeyCode == Keys.L)
-            {
-                ShowSetupPage(Config.Load());
-                e.Handled = true;
-            }
-            else if (e.Alt && e.KeyCode == Keys.Left)
-            {
-                if (web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
-                e.Handled = true;
-            }
-        }
-
         private void ShowDiagnostics()
         {
-            var sb = new StringBuilder();
+            var sb = new System.Text.StringBuilder();
             sb.AppendLine(BuildTag);
             sb.AppendLine("DeviceDpi = " + DeviceDpi + "  (" + (DeviceDpi * 100 / 96) + "%)");
             sb.AppendLine("ClientSize = " + ClientSize.Width + " x " + ClientSize.Height);
-            if (web != null)
+            sb.AppendLine("Screen = " + Screen.PrimaryScreen.Bounds.Width + " x " +
+                          Screen.PrimaryScreen.Bounds.Height);
+            if (controller != null)
             {
-                sb.AppendLine("WebView2 = " + web.Bounds.Width + " x " + web.Bounds.Height +
-                              " @ " + web.Bounds.X + "," + web.Bounds.Y);
+                Rectangle b = controller.Bounds;
+                sb.AppendLine("Controller = " + b.Width + " x " + b.Height + " @ " + b.X + "," + b.Y);
+                sb.AppendLine("BoundsMode = " + controller.BoundsMode);
             }
-            Rectangle b = Screen.PrimaryScreen.Bounds;
-            Rectangle w = Screen.PrimaryScreen.WorkingArea;
-            sb.AppendLine("Screen = " + b.Width + " x " + b.Height +
-                          "  work = " + w.Width + " x " + w.Height);
-            sb.AppendLine("AutoScaleMode = " + AutoScaleMode);
             MessageBox.Show(sb.ToString(), "诊断信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
@@ -268,9 +279,21 @@ namespace QizhouPavilion
                 "琪舟阁", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Close();
         }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            try
+            {
+                if (controller != null) controller.Close();
+            }
+            catch
+            {
+            }
+            base.OnFormClosed(e);
+        }
     }
 
-    /** 自绘右键菜单：白底圆角、悬停高亮，跟 App 里的 HTML 菜单观感接近。 */
+    /** 自绘右键菜单：白底圆角、悬停高亮。 */
     internal sealed class RoundMenuRenderer : ToolStripProfessionalRenderer
     {
         public static GraphicsPath RoundedPath(Rectangle r, int radius)
@@ -350,7 +373,7 @@ namespace QizhouPavilion
                 using (Stream s = asm.GetManifestResourceStream(name))
                 {
                     if (s == null) return null;
-                    using (var reader = new StreamReader(s, Encoding.UTF8))
+                    using (var reader = new StreamReader(s, System.Text.Encoding.UTF8))
                     {
                         return reader.ReadToEnd();
                     }
