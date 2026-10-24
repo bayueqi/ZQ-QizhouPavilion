@@ -95,21 +95,42 @@
       location.href = 'zqnavgo:' + encodeURIComponent(msg);
     }
 
-    for (i = 0; i < items.length; i++) {
-      (function (el) {
-        el.addEventListener('click', function () {
-          fire(el.getAttribute('data-a'));
-        });
-      })(items[i]);
+    // 移动端 click 有时会被 WebView 吞掉，这里同时吃 touchend，并用标志去重
+    function bindItem(el) {
+      var fired = false;
+
+      function handler(e) {
+        if (fired) return;
+        fired = true;
+        setTimeout(function () { fired = false; }, 500);
+        if (e) {
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+        }
+        fire(el.getAttribute('data-a'));
+      }
+
+      el.addEventListener('click', handler);
+      el.addEventListener('touchend', handler);
     }
 
-    mask.addEventListener('mousedown', hide);
-    mask.addEventListener('touchstart', hide);
+    for (i = 0; i < items.length; i++) {
+      bindItem(items[i]);
+    }
+
+    // 注意：判断点的是不是菜单本体。否则 touchstart/mousedown 会在 click 之前
+    // 先把菜单隐藏，导致"菜单出来了但点不动"。
+    function onMaskDown(e) {
+      if (menu && menu.contains && menu.contains(e.target)) return;
+      hide();
+    }
+
+    mask.addEventListener('mousedown', onMaskDown);
+    mask.addEventListener('touchstart', onMaskDown);
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') hide();
     });
     window.addEventListener('resize', hide);
-    window.addEventListener('blur', hide);
 
     function place(x, y) {
       mask.className = 'mask on';
