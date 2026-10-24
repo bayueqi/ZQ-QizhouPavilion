@@ -13,7 +13,7 @@ namespace QizhouPavilion
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "b16";
+        private const string BuildTag = "b18";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
@@ -22,6 +22,9 @@ namespace QizhouPavilion
         private string injectJs;
         private bool coreReady;
         private bool inSetup;
+        private bool fullscreen;
+        private FormBorderStyle prevBorder = FormBorderStyle.Sizable;
+        private FormWindowState prevState = FormWindowState.Normal;
 
         public MainForm(string url)
         {
@@ -262,24 +265,71 @@ namespace QizhouPavilion
             if (home != null) NavigateTo(home);
         }
 
-        /** 右键：保留 WebView2 原生菜单，只在最上面插一项「返回主页面」。 */
+        /**
+         * 右键：在 WebView2 原生菜单上做减法 ——
+         * 去掉「另存为 / 打印 / 更多工具」，顶部加上「返回主页面」和「全屏」。
+         */
         private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
         {
             if (!coreReady || inSetup) return;
             try
             {
+                var items = e.MenuItems;
+
+                for (int i = items.Count - 1; i >= 0; i--)
+                {
+                    CoreWebView2ContextMenuItem it = items[i];
+                    string name = it.Name ?? "";
+                    if (name.IndexOf("另存为", StringComparison.Ordinal) >= 0 ||
+                        name.IndexOf("打印", StringComparison.Ordinal) >= 0 ||
+                        name.IndexOf("更多工具", StringComparison.Ordinal) >= 0 ||
+                        name.IndexOf("Save as", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Print", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("More tools", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        items.RemoveAt(i);
+                    }
+                }
+
                 CoreWebView2Environment env = core.Environment;
-                CoreWebView2ContextMenuItem item = env.CreateContextMenuItem(
+
+                CoreWebView2ContextMenuItem full = env.CreateContextMenuItem(
+                    fullscreen ? "退出全屏" : "全屏", null, CoreWebView2ContextMenuItemKind.Command);
+                full.CustomItemSelected += delegate
+                {
+                    BeginInvoke((Action)(() => ToggleFullscreen()));
+                };
+                items.Insert(0, full);
+
+                CoreWebView2ContextMenuItem home = env.CreateContextMenuItem(
                     "返回主页面", null, CoreWebView2ContextMenuItemKind.Command);
-                item.CustomItemSelected += delegate
+                home.CustomItemSelected += delegate
                 {
                     BeginInvoke((Action)(() => GoHome()));
                 };
-                e.MenuItems.Insert(0, item);
+                items.Insert(0, home);
             }
             catch
             {
             }
+        }
+
+        private void ToggleFullscreen()
+        {
+            if (!fullscreen)
+            {
+                prevBorder = FormBorderStyle;
+                prevState = WindowState;
+                FormBorderStyle = FormBorderStyle.None;
+                WindowState = FormWindowState.Maximized;
+            }
+            else
+            {
+                FormBorderStyle = prevBorder;
+                WindowState = prevState;
+            }
+            fullscreen = !fullscreen;
+            SyncBounds();
         }
 
         /** 键盘焦点在网页里时 Form.KeyDown 收不到，只能从 controller 这一层拦。 */
@@ -304,6 +354,16 @@ namespace QizhouPavilion
             else if (key == Keys.L && (mods & Keys.Control) == Keys.Control)
             {
                 ShowSetupPage(Config.Load());
+                e.Handled = true;
+            }
+            else if (key == Keys.F11)
+            {
+                ToggleFullscreen();
+                e.Handled = true;
+            }
+            else if (key == Keys.Escape && fullscreen)
+            {
+                ToggleFullscreen();
                 e.Handled = true;
             }
             else if ((key == Keys.Left && (mods & Keys.Alt) == Keys.Alt) ||
