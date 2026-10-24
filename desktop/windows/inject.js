@@ -47,7 +47,13 @@
   }
 
   /* ---------- 手机端长按 → 返回主页面 ---------- */
+  var sheetOpen = false;
+
   function showHomeSheet() {
+    // 已经开着就别再叠一层（之前点一次不消失就是这个原因）
+    if (sheetOpen) return;
+    sheetOpen = true;
+
     var host = document.createElement('div');
     host.style.cssText = 'all:initial;position:fixed;left:0;top:0;width:0;height:0;z-index:2147483647;';
     var shadow = host.attachShadow({ mode: 'open' });
@@ -67,17 +73,27 @@
     document.documentElement.appendChild(host);
 
     function close() {
+      sheetOpen = false;
       if (host.parentNode) host.parentNode.removeChild(host);
     }
 
     shadow.getElementById('mask').addEventListener('click', function (e) {
       if (e.target && e.target.id === 'mask') close();
     });
-    shadow.getElementById('home').addEventListener('click', function (e) {
+
+    // click 和 touchend 都接，防止移动端 click 被吞
+    var fired = false;
+    function go(e) {
+      if (fired) return;
+      fired = true;
+      if (e && e.cancelable) e.preventDefault();
       if (e && e.stopPropagation) e.stopPropagation();
       close();
       send('home');
-    });
+    }
+    var btn = shadow.getElementById('home');
+    btn.addEventListener('click', go);
+    btn.addEventListener('touchend', go);
   }
 
   function bindLongPress() {
@@ -87,6 +103,7 @@
     var y0 = 0;
 
     document.addEventListener('touchstart', function (e) {
+      if (sheetOpen) return;
       if (e.touches.length !== 1) return;
       var t = e.target;
       if (t && t.closest && (t.closest('a') || t.closest('input') ||
@@ -96,7 +113,7 @@
       moved = false;
       timer = setTimeout(function () {
         timer = null;
-        if (moved) return;
+        if (moved || sheetOpen) return;
         try { if (navigator.vibrate) navigator.vibrate(12); } catch (e2) { }
         showHomeSheet();
       }, 520);
