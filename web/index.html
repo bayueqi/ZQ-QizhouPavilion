@@ -171,6 +171,7 @@
     <img src="icon.webp" alt="">
     <span class="name">琪舟阁</span>
     <nav>
+      <a href="#parts">组成部分</a>
       <a href="#download">下载</a>
       <a href="#features">功能</a>
       <a href="#requirements">系统要求</a>
@@ -186,8 +187,9 @@
     <div class="eyebrow">Qizhou Pavilion</div>
     <h1>琪舟阁</h1>
     <p class="lede">
-      把自建的网址导航站包装成一个独立应用。客户端不内置浏览器内核，直接调用系统自带的
-      WebView 组件，安装包 55 KB 到 871 KB，内存与系统浏览器共享。
+      <a href="https://github.com/bayueqi/ZQ-NAV">ZQ-NAV</a> 导航站的桌面与移动客户端。服务端是一个跑在
+      Cloudflare Workers 上的书签收藏与分享平台，客户端只负责把它包装成独立应用——不内置浏览器内核，
+      直接调用系统 WebView，安装包 55 KB 到 871 KB。
     </p>
     <div class="meta">
       <span>v1.0.1</span><i>·</i>
@@ -199,6 +201,21 @@
       <a class="btn btn-ghost" href="https://github.com/bayueqi/ZQ-QizhouPavilion">查看源码</a>
     </div>
   </div>
+
+  <section id="parts">
+    <h2>组成部分</h2>
+    <p class="sub">服务端与客户端分开部署，互不绑定。</p>
+    <ul class="req-list">
+      <li>
+        <b>服务端</b>
+        <span><a href="https://github.com/bayueqi/ZQ-NAV">ZQ-NAV</a> —— 基于 Cloudflare Workers 的书签收藏与分享平台，站点数据存放在 Cloudflare D1。部署一个实例后得到一个域名。</span>
+      </li>
+      <li>
+        <b>客户端</b>
+        <span>琪舟阁 —— 本页提供的应用。填入任意一个 ZQ-NAV 实例的域名即可使用，只承载界面，不保存你自己的站点数据。</span>
+      </li>
+    </ul>
+  </section>
 
   <section id="download">
     <h2>下载</h2>
@@ -306,10 +323,11 @@
 
   <footer>
     <div class="row">
-      <a href="https://github.com/bayueqi/ZQ-QizhouPavilion">GitHub</a>
+      <a href="https://github.com/bayueqi/ZQ-NAV">ZQ-NAV 服务端</a>
+      <a href="https://github.com/bayueqi/ZQ-QizhouPavilion">客户端仓库</a>
       <a href="https://github.com/bayueqi/ZQ-QizhouPavilion/releases">全部版本</a>
       <a href="https://github.com/bayueqi/ZQ-QizhouPavilion/issues">问题反馈</a>
-      <a href="https://nav.520jk.cc.cd">演示站点</a>
+      <a href="https://nav.520jk.cc.cd">演示实例</a>
     </div>
     <div class="copy">© 2026 琪舟阁 · 自用软件，MIT License</div>
   </footer>
