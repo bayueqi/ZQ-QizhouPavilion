@@ -146,6 +146,14 @@ namespace QizhouPavilion
             catch { return; }
             if (string.IsNullOrWhiteSpace(text)) return;
 
+            // 欢迎页的 ✕ —— 回到原来的站
+            if (text == "cancel")
+            {
+                string current = Config.Load();
+                if (current != null) web.CoreWebView2.Navigate(current);
+                return;
+            }
+
             string url = UrlUtil.Normalize(text);
             if (url == null) return;
 

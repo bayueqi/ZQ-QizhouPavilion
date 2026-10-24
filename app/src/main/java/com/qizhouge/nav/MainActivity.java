@@ -12,10 +12,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
-import android.view.KeyEvent;
 import android.view.View;
-import android.view.inputmethod.EditorInfo;
-import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.WebChromeClient;
@@ -25,10 +22,10 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.EditText;
-import android.widget.TextView;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.net.InetAddress;
 
 public class MainActivity extends Activity {
@@ -36,18 +33,19 @@ public class MainActivity extends Activity {
     private static final String PREFS = "zqnav";
     private static final String KEY_HOME = "home_url";
     private static final int BG_COLOR = 0xFFFDF8F3;
+    /** 欢迎页回传通道：页面里 location.href = "zqnavgo:<urlencode>" */
+    private static final String SETUP_SCHEME = "zqnavgo";
+    private static final String SETUP_BASE = "https://qizhouge.app/";
 
     private WebView web;
     private View splash;
     private View loadingBox;
     private View errorBox;
-    private View setup;
-    private EditText urlInput;
-    private TextView setupMsg;
 
     private HtmlCache cache;
     private String homeUrl;
     private boolean pageShown;
+    private boolean inSetup;
     private volatile boolean bypassCache;
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -63,45 +61,9 @@ public class MainActivity extends Activity {
         splash = findViewById(R.id.splash);
         loadingBox = findViewById(R.id.loadingBox);
         errorBox = findViewById(R.id.errorBox);
-        setup = findViewById(R.id.setup);
-        urlInput = (EditText) findViewById(R.id.urlInput);
-        setupMsg = (TextView) findViewById(R.id.setupMsg);
 
         initWebView();
-        bindButtons();
 
-        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
-        String saved = sp.getString(KEY_HOME, null);
-        if (TextUtils.isEmpty(saved)) saved = BuildConfig.DEFAULT_HOME;
-        homeUrl = TextUtils.isEmpty(saved) ? null : saved;
-
-        if (homeUrl == null) {
-            showSetupPage();
-        } else {
-            warmUpDns(homeUrl);
-            loadHome(false);
-        }
-    }
-
-    /**
-     * 启动时先把域名解析掉，等 WebView 真发请求时直接命中系统 DNS 缓存，
-     * 网络差的机器上一次解析就要一两百毫秒。
-     */
-    private void warmUpDns(final String url) {
-        final String host = hostOf(url);
-        if (host == null) return;
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    InetAddress.getByName(host);
-                } catch (Throwable ignored) {
-                }
-            }
-        }, "dns-warmup").start();
-    }
-
-    private void bindButtons() {
         findViewById(R.id.retryBtn).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -114,22 +76,18 @@ public class MainActivity extends Activity {
                 showSetupPage();
             }
         });
-        findViewById(R.id.goBtn).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onGoClick();
-            }
-        });
-        urlInput.setOnEditorActionListener(new TextView.OnEditorActionListener() {
-            @Override
-            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
-                if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE) {
-                    onGoClick();
-                    return true;
-                }
-                return false;
-            }
-        });
+
+        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String saved = sp.getString(KEY_HOME, null);
+        if (TextUtils.isEmpty(saved)) saved = BuildConfig.DEFAULT_HOME;
+        homeUrl = TextUtils.isEmpty(saved) ? null : saved;
+
+        if (homeUrl == null) {
+            showSetupPage();
+        } else {
+            warmUpDns(homeUrl);
+            loadHome(false);
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -191,15 +149,34 @@ public class MainActivity extends Activity {
             showSetupPage();
             return;
         }
+        inSetup = false;
         pageShown = false;
         bypassCache = fresh;
-        setup.setVisibility(View.GONE);
         errorBox.setVisibility(View.GONE);
         loadingBox.setVisibility(View.VISIBLE);
         splash.setVisibility(View.VISIBLE);
         web.setVisibility(View.INVISIBLE);
         web.loadUrl(homeUrl);
         if (fresh) cache.refreshAsync(homeUrl);
+    }
+
+    /**
+     * 欢迎页与桌面三端共用同一份 HTML（assets/setup.html），视觉完全一致。
+     */
+    private void showSetupPage() {
+        String html = SetupPage.build(this, homeUrl);
+        if (html == null) {
+            if (homeUrl != null) loadHome(false);
+            return;
+        }
+        inSetup = true;
+        pageShown = false;
+        bypassCache = false;
+        errorBox.setVisibility(View.GONE);
+        loadingBox.setVisibility(View.GONE);
+        splash.setVisibility(View.GONE);
+        web.setVisibility(View.VISIBLE);
+        web.loadDataWithBaseURL(SETUP_BASE, html, "text/html", "utf-8", null);
     }
 
     private void revealPage() {
@@ -217,43 +194,22 @@ public class MainActivity extends Activity {
         web.setVisibility(View.INVISIBLE);
     }
 
-    private void showSetupPage() {
-        setup.setVisibility(View.VISIBLE);
-        splash.setVisibility(View.GONE);
-        web.setVisibility(View.INVISIBLE);
-        errorBox.setVisibility(View.GONE);
-        loadingBox.setVisibility(View.VISIBLE);
-        setupMsg.setVisibility(View.GONE);
-        urlInput.setText(homeUrl == null ? "" : homeUrl);
-        if (homeUrl != null) {
-            urlInput.setSelection(urlInput.getText().length());
-        }
-        urlInput.requestFocus();
-    }
-
-    private void onGoClick() {
-        String normalized = normalize(urlInput.getText().toString());
-        if (normalized == null) {
-            setupMsg.setText(R.string.setup_invalid);
-            setupMsg.setVisibility(View.VISIBLE);
-            return;
-        }
-        setupMsg.setVisibility(View.GONE);
-        homeUrl = normalized;
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_HOME, normalized).apply();
-        hideKeyboard();
-        loadHome(false);
-    }
-
-    private void hideKeyboard() {
-        try {
-            InputMethodManager imm =
-                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm != null) {
-                imm.hideSoftInputFromWindow(urlInput.getWindowToken(), 0);
+    /**
+     * 启动时先把域名解析掉，等 WebView 真发请求时直接命中系统 DNS 缓存，
+     * 网络差的机器上一次解析就要一两百毫秒。
+     */
+    private void warmUpDns(final String url) {
+        final String host = hostOf(url);
+        if (host == null) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    InetAddress.getByName(host);
+                } catch (Throwable ignored) {
+                }
             }
-        } catch (Exception ignored) {
-        }
+        }, "dns-warmup").start();
     }
 
     // ---------- 路由 ----------
@@ -266,6 +222,9 @@ public class MainActivity extends Activity {
         if (uri == null) return false;
         String scheme = uri.getScheme();
         if (scheme == null) return false;
+        if (SETUP_SCHEME.equalsIgnoreCase(scheme)) {
+            return handleSetupResult(uri);
+        }
         // 交给 WebView 自己处理
         if ("javascript".equalsIgnoreCase(scheme) || "about".equalsIgnoreCase(scheme)
                 || "data".equalsIgnoreCase(scheme) || "blob".equalsIgnoreCase(scheme)) {
@@ -278,6 +237,28 @@ public class MainActivity extends Activity {
             startActivity(new Intent(Intent.ACTION_VIEW, uri));
         } catch (Exception ignored) {
         }
+        return true;
+    }
+
+    private boolean handleSetupResult(Uri uri) {
+        String raw = uri.getSchemeSpecificPart();
+        if (raw == null) return true;
+        String text;
+        try {
+            text = Uri.decode(raw);
+        } catch (Exception e) {
+            return true;
+        }
+        if ("cancel".equals(text)) {
+            if (homeUrl != null) loadHome(false);
+            return true;
+        }
+        String url = normalize(text);
+        if (url == null) return true;
+        homeUrl = url;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_HOME, url).apply();
+        warmUpDns(url);
+        loadHome(true);
         return true;
     }
 
@@ -300,7 +281,7 @@ public class MainActivity extends Activity {
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
             if (request == null || !request.isForMainFrame()) return null;
-            if (homeUrl == null) return null;
+            if (homeUrl == null || inSetup) return null;
             Uri u = request.getUrl();
             if (u == null || !sameHomeUrl(u.toString())) return null;
             if (bypassCache) {
@@ -326,13 +307,13 @@ public class MainActivity extends Activity {
         @Override
         public void onPageFinished(WebView view, String url) {
             revealPage();
-            if (homeUrl != null) cache.refreshAsync(homeUrl);
+            if (homeUrl != null && !inSetup) cache.refreshAsync(homeUrl);
         }
 
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request,
                                     WebResourceError error) {
-            if (request != null && request.isForMainFrame()) {
+            if (request != null && request.isForMainFrame() && !inSetup) {
                 showLoadError();
             }
         }
@@ -349,7 +330,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (setup.getVisibility() == View.VISIBLE) {
+        if (inSetup) {
             if (homeUrl != null) {
                 loadHome(false);
             } else {
@@ -383,43 +364,7 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    // ---------- 工具 ----------
-
-    private static String hostOf(String url) {
-        if (url == null) return null;
-        try {
-            return Uri.parse(url).getHost();
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static String stripSlash(String s) {
-        if (s == null) return "";
-        int end = s.length();
-        while (end > 0 && s.charAt(end - 1) == '/') end--;
-        return s.substring(0, end);
-    }
-
-    private boolean sameHomeUrl(String url) {
-        return stripSlash(url).equalsIgnoreCase(stripSlash(homeUrl));
-    }
-
-    private static String normalize(String raw) {
-        if (raw == null) return null;
-        String s = raw.trim();
-        if (s.length() == 0) return null;
-        if (!s.startsWith("http://") && !s.startsWith("https://")) {
-            s = "https://" + s;
-        }
-        int end = s.length();
-        while (end > 8 && s.charAt(end - 1) == '/') end--;
-        s = s.substring(0, end);
-        Uri u = Uri.parse(s);
-        String host = u.getHost();
-        if (host == null || host.indexOf('.') <= 0) return null;
-        return s;
-    }
+    // ---------- 生命周期 ----------
 
     /**
      * Cookie 默认是内存缓冲、异步落盘的，进程被系统回收时最后写入的登录态可能丢失。
@@ -468,5 +413,75 @@ public class MainActivity extends Activity {
             web = null;
         }
         super.onDestroy();
+    }
+
+    // ---------- 工具 ----------
+
+    private static String hostOf(String url) {
+        if (url == null) return null;
+        try {
+            return Uri.parse(url).getHost();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String stripSlash(String s) {
+        if (s == null) return "";
+        int end = s.length();
+        while (end > 0 && s.charAt(end - 1) == '/') end--;
+        return s.substring(0, end);
+    }
+
+    private boolean sameHomeUrl(String url) {
+        return stripSlash(url).equalsIgnoreCase(stripSlash(homeUrl));
+    }
+
+    private static String normalize(String raw) {
+        if (raw == null) return null;
+        String s = raw.trim();
+        if (s.length() == 0) return null;
+        if (!s.startsWith("http://") && !s.startsWith("https://")) {
+            s = "https://" + s;
+        }
+        int end = s.length();
+        while (end > 8 && s.charAt(end - 1) == '/') end--;
+        s = s.substring(0, end);
+        Uri u = Uri.parse(s);
+        String host = u.getHost();
+        if (host == null || host.indexOf('.') <= 0) return null;
+        return s;
+    }
+
+    /** 读取 assets 里的欢迎页，并把当前域名填进去。 */
+    private static final class SetupPage {
+        private static String template;
+
+        static String build(Context ctx, String current) {
+            if (template == null) template = read(ctx);
+            if (template == null) return null;
+            String safe = current == null
+                    ? ""
+                    : current.replace("\\", "\\\\").replace("\"", "\\\"");
+            return template.replace("__CURRENT__", safe);
+        }
+
+        private static String read(Context ctx) {
+            InputStream in = null;
+            try {
+                in = ctx.getAssets().open("setup.html");
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                return new String(out.toByteArray(), "UTF-8");
+            } catch (Exception e) {
+                return null;
+            } finally {
+                if (in != null) {
+                    try { in.close(); } catch (Exception ignored) { }
+                }
+            }
+        }
     }
 }
