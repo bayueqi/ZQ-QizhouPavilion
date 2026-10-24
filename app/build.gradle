@@ -11,7 +11,7 @@ android {
         applicationId "QizhouPavilion.app"
         minSdk 24
         targetSdk 34
-        versionCode 5
+        versionCode 6
         versionName "1.0.1"
         // 留空 = 首次启动由用户输入域名；填入则内置为默认地址
         buildConfigField "String", "DEFAULT_HOME", "\"\""

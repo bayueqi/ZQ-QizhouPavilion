@@ -30,20 +30,22 @@
     if (!document.body) return;
     if (document.getElementById('zq-change-domain')) return;
 
-    var admin = document.querySelector('a[href="/admin"]');
-    if (!admin || !admin.parentNode) return;
+    // 优先挂在「配套软件」下面，找不到就退回「后台管理」下面
+    var anchor = document.querySelector('a[href*="qizhoupavilion" i]') ||
+                 document.querySelector('a[href="/admin"]');
+    if (!anchor || !anchor.parentNode) return;
 
     var link = document.createElement('a');
     link.id = 'zq-change-domain';
     link.href = 'javascript:void(0)';
-    link.className = admin.className;
+    link.className = anchor.className;
     link.innerHTML = ICON + '更改域名';
     link.addEventListener('click', function (e) {
       if (e && e.preventDefault) e.preventDefault();
       send('change');
     }, false);
 
-    admin.parentNode.insertBefore(link, admin.nextSibling);
+    anchor.parentNode.insertBefore(link, anchor.nextSibling);
   }
 
   /* ---------- 手机端长按 → 返回主页面 ---------- */
