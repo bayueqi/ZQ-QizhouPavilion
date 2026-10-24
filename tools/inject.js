@@ -26,13 +26,42 @@
   }
 
   /* ---------- 侧边栏「更改域名」 ---------- */
+  /*
+   * 锚点必须限制在侧边栏里。
+   * 之前是 document.querySelector('a[href*="qizhoupavilion" i]') 全文档找，
+   * 后台表格里那条书签的 url 也带 qizhoupavilion（_worker.js 把 url 渲染成 <a>），
+   * 结果按钮被插进了表格单元格，变成一条没样式的裸链接——就是「更改域名跑到别处」的 bug。
+   */
+
+  /** 首页侧边栏：<aside> 里一定有指向 /admin 的入口；后台页的 aside 是分类树，不含这个链接。 */
+  function sidebarOf() {
+    var asides = document.querySelectorAll('aside');
+    for (var i = 0; i < asides.length; i++) {
+      if (asides[i].querySelector('a[href="/admin"], a[href$="/admin"]')) return asides[i];
+    }
+    return null;
+  }
+
+  /** 按文案精确找链接（去掉空白再比，防止换行缩进影响）。 */
+  function linkByText(scope, text) {
+    var links = scope.getElementsByTagName('a');
+    for (var i = 0; i < links.length; i++) {
+      var t = (links[i].textContent || '').replace(/\s+/g, '');
+      if (t === text) return links[i];
+    }
+    return null;
+  }
+
   function insertChangeEntry() {
     if (!document.body) return;
     if (document.getElementById('zq-change-domain')) return;
 
-    // 优先挂在「配套软件」下面，找不到就退回「后台管理」下面
-    var anchor = document.querySelector('a[href*="qizhoupavilion" i]') ||
-                 document.querySelector('a[href="/admin"]');
+    var side = sidebarOf();
+    if (!side) return; // 不是首页（后台 / 外站）就不插
+
+    // 优先挂在「配套软件」下面，找不到就退回侧边栏里的「后台管理」下面
+    var anchor = linkByText(side, '配套软件') ||
+                 side.querySelector('a[href="/admin"], a[href$="/admin"]');
     if (!anchor || !anchor.parentNode) return;
 
     var link = document.createElement('a');
