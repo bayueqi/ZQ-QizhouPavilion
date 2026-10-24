@@ -4,8 +4,12 @@ local.properties
 .idea/
 build/
 out/
+dist/
 captures/
 .externalNativeBuild/
 .cxx/
 .DS_Store
+__pycache__/
+*.zip
+*.tar.gz
 _assets/

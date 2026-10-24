@@ -1,20 +1,20 @@
-name: Build APK
+name: Build & Release
 
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  # ---------------- Android ----------------
+  android:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -52,14 +52,131 @@ jobs:
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
           echo "picked: $APK"
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          echo "using: $APKSIGNER"
           "$APKSIGNER" verify --print-certs "$APK"
-          cp "$APK" out/QizhougeNav.apk
+          cp "$APK" out/QizhouPavilion-android.apk
           ls -lh out
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: QizhougeNav-apk
-          path: out/QizhougeNav.apk
+          name: android
+          path: out/QizhouPavilion-android.apk
           if-no-files-found: error
+
+  # ---------------- Windows ----------------
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish
+        run: dotnet publish desktop/windows/QizhouPavilion.csproj -c Release -o dist
+
+      - name: Package
+        run: |
+          Compress-Archive -Path dist\* -DestinationPath QizhouPavilion-windows-x64.zip -Force
+          Get-ChildItem QizhouPavilion-windows-x64.zip | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: QizhouPavilion-windows-x64.zip
+          if-no-files-found: error
+
+  # ---------------- Linux ----------------
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GTK / WebKitGTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Compile
+        run: |
+          mkdir -p dist
+          gcc -O2 -Wall -o dist/qizhoupavilion desktop/linux/qizhoupavilion.c \
+            $(pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.1)
+          cp desktop/linux/qizhoupavilion.png dist/
+          cp desktop/linux/qizhoupavilion.desktop dist/
+          ls -lh dist
+
+      - name: Package
+        run: tar -czf QizhouPavilion-linux-x86_64.tar.gz -C dist .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: QizhouPavilion-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  # ---------------- macOS ----------------
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile
+        run: |
+          mkdir -p build
+          swiftc -O desktop/macos/main.swift -o build/QizhouPavilion
+
+      - name: Bundle .app
+        run: |
+          APP=build/QizhouPavilion.app
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp build/QizhouPavilion "$APP/Contents/MacOS/QizhouPavilion"
+          cp desktop/macos/Info.plist "$APP/Contents/Info.plist"
+          iconutil -c icns desktop/macos/icon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
+          codesign --force --deep --sign - "$APP"
+          ls -R "$APP" | head -20
+
+      - name: Package
+        run: |
+          cd build
+          zip -qry ../QizhouPavilion-macos.zip QizhouPavilion.app
+          cd ..
+          ls -lh QizhouPavilion-macos.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: QizhouPavilion-macos.zip
+          if-no-files-found: error
+
+  # ---------------- Release ----------------
+  release:
+    needs: [ android, windows, linux, macos ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Show files
+        run: ls -lh release
+
+      - name: Publish v1.0.1
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.1
+          name: 琪舟阁 v1.0.1
+          body: |
+            四个平台的原生外壳，都用系统自带 WebView，不捆绑浏览器内核。
+
+            - **Android**：`QizhouPavilion-android.apk`，首次打开填域名
+            - **Windows**：`QizhouPavilion-windows-x64.zip`，需 .NET 8 桌面运行时（Win11 多数已带）
+            - **Linux**：`QizhouPavilion-linux-x86_64.tar.gz`，需 libgtk-3 与 libwebkit2gtk-4.1
+            - **macOS**：`QizhouPavilion-macos.zip`，未公证，首次打开需右键 → 打开
+
+            包名 `QizhouPavilion`，显示名 琪舟阁。
+          files: release/*
+          fail_on_unmatched_files: true

@@ -39,8 +39,12 @@ def rounded_bg(size, color=(255, 255, 255, 255), radius_ratio=0.22):
 
 def write(path, img):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    img.save(path, "PNG", optimize=True)
-    print("wrote", os.path.relpath(path, RES), img.size)
+    # WebP 无损：同样的画质比 PNG 小一半左右，直接省安装包体积
+    img.save(path, "WEBP", lossless=True, quality=100, method=6)
+    print("wrote", os.path.relpath(path, RES), img.size, "%dKB" % (os.path.getsize(path) // 1024))
+    stale = path[:-5] + ".png"
+    if os.path.exists(stale):
+        os.remove(stale)
 
 
 def main():
@@ -50,22 +54,61 @@ def main():
         side = int(48 * scale)  # 48dp 传统图标
         base = rounded_bg(side)
         base.alpha_composite(fit(logo, side, 0.76))
-        write(os.path.join(RES, "mipmap-" + name, "ic_launcher.png"), base)
+        write(os.path.join(RES, "mipmap-" + name, "ic_launcher.webp"), base)
 
         # 圆形版本（部分启动器 roundIcon 用）
         r = rounded_bg(side, radius_ratio=0.5)
         r.alpha_composite(fit(logo, side, 0.70))
-        write(os.path.join(RES, "mipmap-" + name, "ic_launcher_round.png"), r)
+        write(os.path.join(RES, "mipmap-" + name, "ic_launcher_round.webp"), r)
 
         # adaptive icon 前景层：108dp 画布，内容控制在安全区（约 66%）内
         fg_side = int(108 * scale)
         fg = fit(logo, fg_side, 0.56)
-        write(os.path.join(RES, "mipmap-" + name, "ic_launcher_foreground.png"), fg)
+        write(os.path.join(RES, "mipmap-" + name, "ic_launcher_foreground.webp"), fg)
 
     # 启动页 / 设置页用的大图（不随密度缩放，保持清晰）
     big = rounded_bg(512)
     big.alpha_composite(fit(logo, 512, 0.78))
-    write(os.path.join(RES, "drawable-nodpi", "logo.png"), big)
+    write(os.path.join(RES, "drawable-nodpi", "logo.webp"), big)
+
+    make_desktop(logo)
+
+
+def make_desktop(logo):
+    """桌面三平台图标：Windows .ico / macOS .iconset / Linux .png"""
+    root = os.path.abspath(os.path.join(HERE, "..", "desktop"))
+
+    # Windows：单文件多尺寸 ico
+    ico_dir = os.path.join(root, "windows")
+    os.makedirs(ico_dir, exist_ok=True)
+    ico_img = rounded_bg(256)
+    ico_img.alpha_composite(fit(logo, 256, 0.78))
+    ico_img.save(os.path.join(ico_dir, "app.ico"), "ICO",
+                 sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    print("wrote desktop/windows/app.ico")
+
+    # macOS：iconutil 需要的 iconset
+    iconset = os.path.join(root, "macos", "icon.iconset")
+    os.makedirs(iconset, exist_ok=True)
+    for base in (16, 32, 128, 256, 512):
+        for scale in (1, 2):
+            px = base * scale
+            if px > 1024:
+                continue
+            name = "icon_%dx%d%s.png" % (base, base, "@2x" if scale == 2 else "")
+            img = rounded_bg(px)
+            img.alpha_composite(fit(logo, px, 0.78))
+            img.save(os.path.join(iconset, name), "PNG", optimize=True)
+    print("wrote desktop/macos/icon.iconset (%d files)" % len(os.listdir(iconset)))
+
+    # Linux：一张 256 png
+    lin_dir = os.path.join(root, "linux")
+    os.makedirs(lin_dir, exist_ok=True)
+    png = rounded_bg(256)
+    png.alpha_composite(fit(logo, 256, 0.78))
+    png.save(os.path.join(lin_dir, "qizhoupavilion.png"), "PNG", optimize=True)
+    print("wrote desktop/linux/qizhoupavilion.png")
+
 
 
 if __name__ == "__main__":

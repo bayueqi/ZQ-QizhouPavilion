@@ -29,6 +29,7 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 import java.io.ByteArrayInputStream;
+import java.net.InetAddress;
 
 public class MainActivity extends Activity {
 
@@ -77,8 +78,27 @@ public class MainActivity extends Activity {
         if (homeUrl == null) {
             showSetupPage();
         } else {
+            warmUpDns(homeUrl);
             loadHome(false);
         }
+    }
+
+    /**
+     * 启动时先把域名解析掉，等 WebView 真发请求时直接命中系统 DNS 缓存，
+     * 网络差的机器上一次解析就要一两百毫秒。
+     */
+    private void warmUpDns(final String url) {
+        final String host = hostOf(url);
+        if (host == null) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    InetAddress.getByName(host);
+                } catch (Throwable ignored) {
+                }
+            }
+        }, "dns-warmup").start();
     }
 
     private void bindButtons() {
@@ -365,6 +385,15 @@ public class MainActivity extends Activity {
 
     // ---------- 工具 ----------
 
+    private static String hostOf(String url) {
+        if (url == null) return null;
+        try {
+            return Uri.parse(url).getHost();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static String stripSlash(String s) {
         if (s == null) return "";
         int end = s.length();
@@ -402,7 +431,28 @@ public class MainActivity extends Activity {
             CookieManager.getInstance().flush();
         } catch (Exception ignored) {
         }
+        if (web != null) {
+            // 后台不跑页面里的定时器和动画，省电也省内存
+            web.onPause();
+        }
         super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (web != null) {
+            web.onResume();
+        }
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= TRIM_MEMORY_RUNNING_LOW && web != null) {
+            // 让内核回收 WebView 里可丢弃的位图缓存
+            web.freeMemory();
+        }
     }
 
     @Override

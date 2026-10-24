@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=琪舟阁
+Name[en]=QizhouPavilion
+Comment=精品网址导航
+Comment[en]=Bookmark navigation
+Exec=qizhoupavilion %u
+Icon=qizhoupavilion
+Terminal=false
+Categories=Network;WebBrowser;
+StartupWMClass=qizhoupavilion
