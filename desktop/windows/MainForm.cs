@@ -153,7 +153,6 @@ namespace QizhouPavilion
                 (int)Math.Round(ClientSize.Height / scale));
             controller.IsVisible = true;
             controller.ZoomFactor = 1.0;
-            controller.AcceleratorKeyPressed += OnAcceleratorKey;
 
             core = controller.CoreWebView2;
             coreReady = true;
@@ -163,7 +162,7 @@ namespace QizhouPavilion
             st.AreDevToolsEnabled = false;
             // 缩放交给网页自己的 viewport，App 不再提供缩放，免得缩放系数和点击坐标对不上
             st.IsZoomControlEnabled = false;
-            // 右键交回给网页自己（复制、另存为都还在）
+            // 需要保留默认上下文菜单的触发生效，具体条目在 OnContextMenu 里换成我们自己的六项
             st.AreDefaultContextMenusEnabled = true;
             string ua = st.UserAgent;
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
@@ -250,6 +249,24 @@ namespace QizhouPavilion
                 return;
             }
 
+            if (text == "back")
+            {
+                NavigateBack();
+                return;
+            }
+
+            if (text == "forward")
+            {
+                NavigateForward();
+                return;
+            }
+
+            if (text == "fullscreen")
+            {
+                ToggleFullscreen();
+                return;
+            }
+
             if (text == "reload")
             {
                 if (core != null) core.Reload();
@@ -271,8 +288,8 @@ namespace QizhouPavilion
         }
 
         /**
-         * 右键：在 WebView2 原生菜单上做减法 ——
-         * 去掉「另存为 / 打印 / 更多工具」，顶部加上「返回主页面」和「全屏」。
+         * 右键菜单：只用我们自己的六项（刷新 / 全屏 / 更换域名 / 后退上一页 / 前进下一页 / 返回主页面），
+         * 不保留 WebView2 自带项，也不挂任何快捷键提示。
          */
         private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
         {
@@ -280,23 +297,17 @@ namespace QizhouPavilion
             try
             {
                 var items = e.MenuItems;
-
-                for (int i = items.Count - 1; i >= 0; i--)
-                {
-                    CoreWebView2ContextMenuItem it = items[i];
-                    string label = it.Label ?? "";
-                    if (label.IndexOf("另存为", StringComparison.Ordinal) >= 0 ||
-                        label.IndexOf("打印", StringComparison.Ordinal) >= 0 ||
-                        label.IndexOf("更多工具", StringComparison.Ordinal) >= 0 ||
-                        label.IndexOf("Save as", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        label.IndexOf("Print", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        label.IndexOf("More tools", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        items.RemoveAt(i);
-                    }
-                }
+                items.Clear();
 
                 CoreWebView2Environment env = core.Environment;
+
+                CoreWebView2ContextMenuItem reload = env.CreateContextMenuItem(
+                    "刷新", null, CoreWebView2ContextMenuItemKind.Command);
+                reload.CustomItemSelected += delegate
+                {
+                    BeginInvoke((Action)(() => { if (core != null) core.Reload(); }));
+                };
+                items.Add(reload);
 
                 CoreWebView2ContextMenuItem full = env.CreateContextMenuItem(
                     fullscreen ? "退出全屏" : "全屏", null, CoreWebView2ContextMenuItemKind.Command);
@@ -304,7 +315,33 @@ namespace QizhouPavilion
                 {
                     BeginInvoke((Action)(() => ToggleFullscreen()));
                 };
-                items.Insert(0, full);
+                items.Add(full);
+
+                CoreWebView2ContextMenuItem domain = env.CreateContextMenuItem(
+                    "更换域名", null, CoreWebView2ContextMenuItemKind.Command);
+                domain.CustomItemSelected += delegate
+                {
+                    BeginInvoke((Action)(() => ShowSetupPage(Config.Load())));
+                };
+                items.Add(domain);
+
+                CoreWebView2ContextMenuItem back = env.CreateContextMenuItem(
+                    "后退上一页", null, CoreWebView2ContextMenuItemKind.Command);
+                back.IsEnabled = core.CanGoBack;
+                back.CustomItemSelected += delegate
+                {
+                    BeginInvoke((Action)(() => NavigateBack()));
+                };
+                items.Add(back);
+
+                CoreWebView2ContextMenuItem forward = env.CreateContextMenuItem(
+                    "前进下一页", null, CoreWebView2ContextMenuItemKind.Command);
+                forward.IsEnabled = core.CanGoForward;
+                forward.CustomItemSelected += delegate
+                {
+                    BeginInvoke((Action)(() => NavigateForward()));
+                };
+                items.Add(forward);
 
                 CoreWebView2ContextMenuItem home = env.CreateContextMenuItem(
                     "返回主页面", null, CoreWebView2ContextMenuItemKind.Command);
@@ -312,7 +349,7 @@ namespace QizhouPavilion
                 {
                     BeginInvoke((Action)(() => GoHome()));
                 };
-                items.Insert(0, home);
+                items.Add(home);
             }
             catch
             {
@@ -335,64 +372,6 @@ namespace QizhouPavilion
             }
             fullscreen = !fullscreen;
             SyncBounds();
-        }
-
-        /** 键盘焦点在网页里时 Form.KeyDown 收不到，只能从 controller 这一层拦。 */
-        private void OnAcceleratorKey(object sender, CoreWebView2AcceleratorKeyPressedEventArgs e)
-        {
-            if (e.KeyEventKind != CoreWebView2KeyEventKind.KeyDown &&
-                e.KeyEventKind != CoreWebView2KeyEventKind.SystemKeyDown) return;
-
-            Keys key = (Keys)e.VirtualKey;
-            Keys mods = ModifierKeys;
-
-            if (key == Keys.D && (mods & Keys.Control) == Keys.Control && (mods & Keys.Shift) == Keys.Shift)
-            {
-                ShowDiagnostics();
-                e.Handled = true;
-            }
-            else if (key == Keys.F5 || (key == Keys.R && (mods & Keys.Control) == Keys.Control))
-            {
-                if (core != null) core.Reload();
-                e.Handled = true;
-            }
-            else if (key == Keys.L && (mods & Keys.Control) == Keys.Control)
-            {
-                ShowSetupPage(Config.Load());
-                e.Handled = true;
-            }
-            else if (key == Keys.F11)
-            {
-                ToggleFullscreen();
-                e.Handled = true;
-            }
-            else if (key == Keys.Escape && fullscreen)
-            {
-                ToggleFullscreen();
-                e.Handled = true;
-            }
-            else if ((key == Keys.Left && (mods & Keys.Alt) == Keys.Alt) ||
-                     (key == Keys.BrowserBack))
-            {
-                NavigateBack();
-                e.Handled = true;
-            }
-        }
-
-        private void ShowDiagnostics()
-        {
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine(BuildTag);
-            sb.AppendLine("DeviceDpi = " + DeviceDpi + "  (" + (DeviceDpi * 100 / 96) + "%)");
-            sb.AppendLine("ClientSize = " + ClientSize.Width + " x " + ClientSize.Height);
-            sb.AppendLine("Screen = " + Screen.PrimaryScreen.Bounds.Width + " x " +
-                          Screen.PrimaryScreen.Bounds.Height);
-            if (controller != null)
-            {
-                Rectangle b = controller.Bounds;
-                sb.AppendLine("Bounds = " + b.Width + " x " + b.Height + " @ " + b.X + "," + b.Y);
-            }
-            MessageBox.Show(sb.ToString(), "诊断信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void ShowFatal(Exception ex)

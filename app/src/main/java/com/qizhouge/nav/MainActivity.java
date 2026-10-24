@@ -49,6 +49,8 @@ public class MainActivity extends Activity {
     private String homeUrl;
     private boolean pageShown;
     private boolean inSetup;
+    /** 长按菜单切换的全屏（隐藏状态栏/导航栏），与网页视频全屏是两回事 */
+    private boolean appFullscreen;
     private volatile boolean bypassCache;
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -257,17 +259,28 @@ public class MainActivity extends Activity {
             if (homeUrl != null) loadHome(false);
             return true;
         }
-        // 侧边栏里的「更改域名」
+        // 长按屏幕弹出的功能菜单（与电脑端菜单同六项）
         if ("change".equals(text)) {
             showSetupPage();
             return true;
         }
-        // 长按屏幕 → 刷新当前页 / 返回主页面
         if ("reload".equals(text)) {
             // 刷新的是当前这一页，不能回首页
             if (web != null && !inSetup && web.getUrl() != null) {
                 web.reload();
             }
+            return true;
+        }
+        if ("fullscreen".equals(text)) {
+            toggleAppFullscreen();
+            return true;
+        }
+        if ("back".equals(text)) {
+            if (web != null && web.canGoBack()) web.goBack();
+            return true;
+        }
+        if ("forward".equals(text)) {
+            if (web != null && web.canGoForward()) web.goForward();
             return true;
         }
         if ("home".equals(text)) {
@@ -409,6 +422,16 @@ public class MainActivity extends Activity {
         try {
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
         } catch (Exception ignored) {
+        }
+    }
+
+    /** 长按菜单里的「全屏」：隐藏状态栏和导航栏，再点一次还原。 */
+    private void toggleAppFullscreen() {
+        appFullscreen = !appFullscreen;
+        if (appFullscreen) {
+            enterImmersive();
+        } else {
+            exitImmersive();
         }
     }
 

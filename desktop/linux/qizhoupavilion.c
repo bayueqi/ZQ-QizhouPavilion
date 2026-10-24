@@ -122,29 +122,84 @@ static char *prompt_url(void)
     return result;
 }
 
-static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer data)
-{
-    (void)widget;
-    (void)data;
-    if (web_view == NULL)
-        return FALSE;
+/* ---------- 通用动作：菜单和网页回传都走这几个 ---------- */
 
-    gboolean ctrl = (event->state & GDK_CONTROL_MASK) != 0;
-    if (event->keyval == GDK_KEY_F5 ||
-        (ctrl && (event->keyval == GDK_KEY_r || event->keyval == GDK_KEY_R))) {
+static gboolean is_fullscreen = FALSE;
+
+static void act_fullscreen(void)
+{
+    if (main_window == NULL)
+        return;
+    if (is_fullscreen)
+        gtk_window_unfullscreen(GTK_WINDOW(main_window));
+    else
+        gtk_window_fullscreen(GTK_WINDOW(main_window));
+    is_fullscreen = !is_fullscreen;
+}
+
+static void act_reload(void)
+{
+    if (web_view != NULL)
         webkit_web_view_reload(WEBKIT_WEB_VIEW(web_view));
-        return TRUE;
+}
+
+static void act_back(void)
+{
+    if (web_view == NULL)
+        return;
+    WebKitWebView *wv = WEBKIT_WEB_VIEW(web_view);
+    if (webkit_web_view_can_go_back(wv))
+        webkit_web_view_go_back(wv);
+}
+
+static void act_forward(void)
+{
+    if (web_view == NULL)
+        return;
+    WebKitWebView *wv = WEBKIT_WEB_VIEW(web_view);
+    if (webkit_web_view_can_go_forward(wv))
+        webkit_web_view_go_forward(wv);
+}
+
+static void act_home(void)
+{
+    if (web_view == NULL)
+        return;
+    char *home = load_url();
+    if (home != NULL) {
+        webkit_web_view_load_uri(WEBKIT_WEB_VIEW(web_view), home);
+        g_free(home);
     }
-    if (ctrl && (event->keyval == GDK_KEY_l || event->keyval == GDK_KEY_L)) {
-        char *url = prompt_url();
-        if (url != NULL) {
-            save_url(url);
-            webkit_web_view_load_uri(WEBKIT_WEB_VIEW(web_view), url);
-            g_free(url);
-        }
-        return TRUE;
+}
+
+static void act_change(void)
+{
+    if (web_view == NULL)
+        return;
+    char *url = prompt_url();
+    if (url != NULL) {
+        save_url(url);
+        webkit_web_view_load_uri(WEBKIT_WEB_VIEW(web_view), url);
+        g_free(url);
     }
-    return FALSE;
+}
+
+static void act_dispatch(const char *action)
+{
+    if (action == NULL)
+        return;
+    if (g_strcmp0(action, "reload") == 0)
+        act_reload();
+    else if (g_strcmp0(action, "fullscreen") == 0)
+        act_fullscreen();
+    else if (g_strcmp0(action, "change") == 0)
+        act_change();
+    else if (g_strcmp0(action, "back") == 0)
+        act_back();
+    else if (g_strcmp0(action, "forward") == 0)
+        act_forward();
+    else if (g_strcmp0(action, "home") == 0)
+        act_home();
 }
 
 /* ---------- 自绘右键菜单 ---------- */
@@ -158,10 +213,11 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent load_event, gpo
     }
 }
 
-/* 网页侧边栏的「更改域名」走 zqnavgo:change，这里拦下来 */
+/* 网页侧长按菜单走 zqnavgo:<动作名>，这里拦下来交给统一的动作分发 */
 static gboolean on_decide_policy(WebKitWebView *view, WebKitPolicyDecision *decision,
                                  WebKitPolicyDecisionType type, gpointer user_data)
 {
+    (void)view;
     (void)user_data;
     if (type != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION)
         return FALSE;
@@ -181,22 +237,7 @@ static gboolean on_decide_policy(WebKitWebView *view, WebKitPolicyDecision *deci
 
     char *decoded = g_uri_unescape_string(uri + strlen("zqnavgo:"), NULL);
     if (decoded != NULL) {
-        if (g_strcmp0(decoded, "change") == 0) {
-            char *u = prompt_url();
-            if (u != NULL) {
-                save_url(u);
-                webkit_web_view_load_uri(view, u);
-                g_free(u);
-            }
-        } else if (g_strcmp0(decoded, "home") == 0) {
-            char *home = load_url();
-            if (home != NULL) {
-                webkit_web_view_load_uri(view, home);
-                g_free(home);
-            }
-        } else if (g_strcmp0(decoded, "reload") == 0) {
-            webkit_web_view_reload(view);
-        }
+        act_dispatch(decoded);
         g_free(decoded);
     }
     return TRUE;
@@ -223,37 +264,10 @@ static gboolean on_context_menu(WebKitWebView *view, WebKitContextMenu *menu,
 
 /* ---------- 标题栏里的菜单 ---------- */
 
-static void on_menu_change(GtkMenuItem *item, gpointer data)
+static void on_menu_action(GtkMenuItem *item, gpointer data)
 {
     (void)item;
-    (void)data;
-    if (web_view == NULL)
-        return;
-    char *url = prompt_url();
-    if (url != NULL) {
-        save_url(url);
-        webkit_web_view_load_uri(WEBKIT_WEB_VIEW(web_view), url);
-        g_free(url);
-    }
-}
-
-static void on_menu_back(GtkMenuItem *item, gpointer data)
-{
-    (void)item;
-    (void)data;
-    if (web_view == NULL)
-        return;
-    WebKitWebView *wv = WEBKIT_WEB_VIEW(web_view);
-    if (webkit_web_view_can_go_back(wv))
-        webkit_web_view_go_back(wv);
-}
-
-static void on_menu_reload(GtkMenuItem *item, gpointer data)
-{
-    (void)item;
-    (void)data;
-    if (web_view != NULL)
-        webkit_web_view_reload(WEBKIT_WEB_VIEW(web_view));
+    act_dispatch((const char *)data);
 }
 
 static void on_menu_quit(GtkMenuItem *item, gpointer data)
@@ -275,20 +289,26 @@ static GtkWidget *make_header_bar(void)
     gtk_container_add(GTK_CONTAINER(menu_btn), gtk_label_new("☰"));
 
     GtkWidget *menu = gtk_menu_new();
-    GtkWidget *i_change = gtk_menu_item_new_with_label("更换导航站域名");
-    GtkWidget *i_back = gtk_menu_item_new_with_label("后退");
-    GtkWidget *i_reload = gtk_menu_item_new_with_label("刷新");
-    GtkWidget *i_quit = gtk_menu_item_new_with_label("退出琪舟阁");
+    /* 与 Windows 右键菜单、手机长按菜单完全一致的六项，不挂快捷键 */
+    static const char *const items[6][2] = {
+        { "reload", "刷新" },
+        { "fullscreen", "全屏" },
+        { "change", "更换域名" },
+        { "back", "后退上一页" },
+        { "forward", "前进下一页" },
+        { "home", "返回主页面" }
+    };
+    int i;
+    for (i = 0; i < 6; i++) {
+        GtkWidget *it = gtk_menu_item_new_with_label(items[i][1]);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), it);
+        g_signal_connect(it, "activate", G_CALLBACK(on_menu_action),
+                         (gpointer)items[i][0]);
+    }
 
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), i_change);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), i_back);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), i_reload);
+    GtkWidget *i_quit = gtk_menu_item_new_with_label("退出琪舟阁");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), i_quit);
-
-    g_signal_connect(i_change, "activate", G_CALLBACK(on_menu_change), NULL);
-    g_signal_connect(i_back, "activate", G_CALLBACK(on_menu_back), NULL);
-    g_signal_connect(i_reload, "activate", G_CALLBACK(on_menu_reload), NULL);
     g_signal_connect(i_quit, "activate", G_CALLBACK(on_menu_quit), NULL);
 
     gtk_widget_show_all(menu);
@@ -323,7 +343,6 @@ int main(int argc, char **argv)
 
     web_view = webkit_web_view_new();
     gtk_container_add(GTK_CONTAINER(main_window), web_view);
-    g_signal_connect(main_window, "key-press-event", G_CALLBACK(on_key_press), NULL);
     g_signal_connect(web_view, "load-changed", G_CALLBACK(on_load_changed), NULL);
     g_signal_connect(web_view, "context-menu", G_CALLBACK(on_context_menu), NULL);
     g_signal_connect(web_view, "decide-policy", G_CALLBACK(on_decide_policy), NULL);

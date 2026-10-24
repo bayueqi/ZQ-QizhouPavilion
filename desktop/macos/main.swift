@@ -103,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         return true
     }
 
-    /// 网页侧边栏的「更改域名」走 zqnavgo:change，WebKit 默认会当未知协议忽略，这里拦下来
+    /// 长按菜单走 zqnavgo:<动作名>，WebKit 默认会当未知协议忽略，这里拦下来
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -113,12 +113,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             let raw = url.absoluteString
             let body = raw.hasPrefix(prefix) ? String(raw.dropFirst(prefix.count)) : raw
             let text = body.removingPercentEncoding ?? body
-            if text == "change" {
-                changeDomain(nil)
-            } else if text == "home" {
-                goHome(nil)
-            } else if text == "reload" {
-                web?.reload()
+            switch text {
+            case "change": changeDomain(nil)
+            case "home": goHome(nil)
+            case "reload": web?.reload()
+            case "back": goBack(nil)
+            case "forward": goForward(nil)
+            case "fullscreen": toggleFullscreen(nil)
+            default: break
             }
             return
         }
@@ -131,6 +133,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     @objc func goBack(_ sender: Any?) {
         if web?.canGoBack == true { web?.goBack() }
+    }
+
+    @objc func goForward(_ sender: Any?) {
+        if web?.canGoForward == true { web?.goForward() }
+    }
+
+    @objc func toggleFullscreen(_ sender: Any?) {
+        window?.toggleFullScreen(sender)
     }
 
     /// 回导航站首页
@@ -155,29 +165,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
                         keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
 
-        let reloadItem = NSMenuItem(title: "刷新", action: #selector(reloadPage(_:)), keyEquivalent: "r")
-        reloadItem.target = self
-        appMenu.addItem(reloadItem)
-
-        let homeItem = NSMenuItem(title: "返回主页面", action: #selector(goHome(_:)), keyEquivalent: "0")
-        homeItem.target = self
-        appMenu.addItem(homeItem)
-
-        let backItem = NSMenuItem(title: "后退", action: #selector(goBack(_:)), keyEquivalent: "[")
-        backItem.target = self
-        appMenu.addItem(backItem)
-
-        let domainItem = NSMenuItem(title: "更换域名", action: #selector(changeDomain(_:)), keyEquivalent: "l")
-        domainItem.target = self
-        appMenu.addItem(domainItem)
+        // 与 Windows 右键菜单、手机长按菜单完全一致的六项，且不挂快捷键
+        let entries: [(String, Selector)] = [
+            ("刷新", #selector(reloadPage(_:))),
+            ("全屏", #selector(toggleFullscreen(_:))),
+            ("更换域名", #selector(changeDomain(_:))),
+            ("后退上一页", #selector(goBack(_:))),
+            ("前进下一页", #selector(goForward(_:))),
+            ("返回主页面", #selector(goHome(_:)))
+        ]
+        for (title, action) in entries {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            appMenu.addItem(item)
+        }
 
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "隐藏 \(appTitle)",
                         action: #selector(NSApplication.hide(_:)),
-                        keyEquivalent: "h")
+                        keyEquivalent: "")
         appMenu.addItem(withTitle: "退出",
                         action: #selector(NSApplication.terminate(_:)),
-                        keyEquivalent: "q")
+                        keyEquivalent: "")
 
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
