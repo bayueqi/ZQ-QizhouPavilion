@@ -98,6 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         web?.reload()
     }
 
+    @objc func goBack(_ sender: Any?) {
+        if web?.canGoBack == true { web?.goBack() }
+    }
+
     @objc func changeDomain(_ sender: Any?) {
         guard let url = promptURL() else { return }
         saveURL(url.absoluteString)
@@ -117,6 +121,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let reloadItem = NSMenuItem(title: "刷新", action: #selector(reloadPage(_:)), keyEquivalent: "r")
         reloadItem.target = self
         appMenu.addItem(reloadItem)
+
+        let backItem = NSMenuItem(title: "后退", action: #selector(goBack(_:)), keyEquivalent: "[")
+        backItem.target = self
+        appMenu.addItem(backItem)
 
         let domainItem = NSMenuItem(title: "更换域名", action: #selector(changeDomain(_:)), keyEquivalent: "l")
         domainItem.target = self

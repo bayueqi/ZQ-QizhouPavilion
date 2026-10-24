@@ -78,6 +78,7 @@ namespace QizhouPavilion
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
 
             web.CoreWebView2.WebMessageReceived += OnWebMessage;
+            web.CoreWebView2.ContextMenuRequested += OnContextMenu;
             // target=_blank 的链接也在当前窗口打开
             web.CoreWebView2.NewWindowRequested += (s, e) =>
             {
@@ -95,6 +96,47 @@ namespace QizhouPavilion
             string html = SetupPage.Build(current);
             if (html == null) return;
             web.CoreWebView2.NavigateToString(html);
+        }
+
+        /// <summary>
+        /// 右键菜单顶部插入 App 自己的入口，这样不记快捷键也能换域名 / 退出。
+        /// </summary>
+        private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
+        {
+            if (!coreReady) return;
+            CoreWebView2Environment env = web.CoreWebView2.Environment;
+            CoreWebView2ContextMenuItemCollection items = e.MenuItems;
+
+            CoreWebView2ContextMenuItem change =
+                env.CreateContextMenuItem("更换导航站域名", null, CoreWebView2ContextMenuItemKind.Command);
+            change.CustomItemSelected += delegate { BeginInvoke((Action)(() => ShowSetupPage(Config.Load()))); };
+
+            CoreWebView2ContextMenuItem back =
+                env.CreateContextMenuItem("后退", null, CoreWebView2ContextMenuItemKind.Command);
+            back.CustomItemSelected += delegate
+            {
+                BeginInvoke((Action)(() =>
+                {
+                    if (web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
+                }));
+            };
+
+            CoreWebView2ContextMenuItem reload =
+                env.CreateContextMenuItem("刷新", null, CoreWebView2ContextMenuItemKind.Command);
+            reload.CustomItemSelected += delegate { BeginInvoke((Action)(() => web.CoreWebView2.Reload())); };
+
+            CoreWebView2ContextMenuItem quit =
+                env.CreateContextMenuItem("退出琪舟阁", null, CoreWebView2ContextMenuItemKind.Command);
+            quit.CustomItemSelected += delegate { BeginInvoke((Action)(() => Close())); };
+
+            CoreWebView2ContextMenuItem sep =
+                env.CreateContextMenuItem("", null, CoreWebView2ContextMenuItemKind.Separator);
+
+            items.Insert(0, sep);
+            items.Insert(0, quit);
+            items.Insert(0, reload);
+            items.Insert(0, back);
+            items.Insert(0, change);
         }
 
         private void OnWebMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)

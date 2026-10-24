@@ -144,6 +144,83 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer dat
     return FALSE;
 }
 
+/* ---------- 标题栏里的菜单 ---------- */
+
+static void on_menu_change(GtkMenuItem *item, gpointer data)
+{
+    (void)item;
+    (void)data;
+    if (web_view == NULL)
+        return;
+    char *url = prompt_url();
+    if (url != NULL) {
+        save_url(url);
+        webkit_web_view_load_uri(WEBKIT_WEB_VIEW(web_view), url);
+        g_free(url);
+    }
+}
+
+static void on_menu_back(GtkMenuItem *item, gpointer data)
+{
+    (void)item;
+    (void)data;
+    if (web_view == NULL)
+        return;
+    WebKitWebView *wv = WEBKIT_WEB_VIEW(web_view);
+    if (webkit_web_view_can_go_back(wv))
+        webkit_web_view_go_back(wv);
+}
+
+static void on_menu_reload(GtkMenuItem *item, gpointer data)
+{
+    (void)item;
+    (void)data;
+    if (web_view != NULL)
+        webkit_web_view_reload(WEBKIT_WEB_VIEW(web_view));
+}
+
+static void on_menu_quit(GtkMenuItem *item, gpointer data)
+{
+    (void)item;
+    (void)data;
+    gtk_main_quit();
+}
+
+static GtkWidget *make_header_bar(void)
+{
+    GtkWidget *header = gtk_header_bar_new();
+    gtk_header_bar_set_title(GTK_HEADER_BAR(header), "琪舟阁");
+    gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header), TRUE);
+
+    GtkWidget *menu_btn = gtk_menu_button_new();
+    gtk_widget_set_tooltip_text(menu_btn, "菜单");
+    gtk_button_set_relief(GTK_BUTTON(menu_btn), GTK_RELIEF_NONE);
+    gtk_container_add(GTK_CONTAINER(menu_btn), gtk_label_new("☰"));
+
+    GtkWidget *menu = gtk_menu_new();
+    GtkWidget *i_change = gtk_menu_item_new_with_label("更换导航站域名");
+    GtkWidget *i_back = gtk_menu_item_new_with_label("后退");
+    GtkWidget *i_reload = gtk_menu_item_new_with_label("刷新");
+    GtkWidget *i_quit = gtk_menu_item_new_with_label("退出琪舟阁");
+
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), i_change);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), i_back);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), i_reload);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), i_quit);
+
+    g_signal_connect(i_change, "activate", G_CALLBACK(on_menu_change), NULL);
+    g_signal_connect(i_back, "activate", G_CALLBACK(on_menu_back), NULL);
+    g_signal_connect(i_reload, "activate", G_CALLBACK(on_menu_reload), NULL);
+    g_signal_connect(i_quit, "activate", G_CALLBACK(on_menu_quit), NULL);
+
+    gtk_widget_show_all(menu);
+    gtk_menu_button_set_popup(GTK_MENU_BUTTON(menu_btn), menu);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), menu_btn);
+
+    return header;
+}
+
 int main(int argc, char **argv)
 {
     gtk_init(&argc, &argv);
@@ -152,6 +229,7 @@ int main(int argc, char **argv)
     gtk_window_set_title(GTK_WINDOW(main_window), "琪舟阁");
     gtk_window_set_default_size(GTK_WINDOW(main_window), 1100, 760);
     gtk_window_set_position(GTK_WINDOW(main_window), GTK_WIN_POS_CENTER);
+    gtk_window_set_titlebar(GTK_WINDOW(main_window), make_header_bar());
     g_signal_connect(main_window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
 
     char *url = NULL;
