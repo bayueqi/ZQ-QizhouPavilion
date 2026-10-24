@@ -13,7 +13,6 @@ import android.text.TextUtils;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
-import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -257,10 +256,6 @@ public class MainActivity extends Activity {
             showSetupPage();
             return true;
         }
-        if (text.startsWith("menu:")) {
-            doMenuAction(text.substring(5));
-            return true;
-        }
         String url = normalize(text);
         if (url == null) return true;
         homeUrl = url;
@@ -353,52 +348,17 @@ public class MainActivity extends Activity {
             web.goBack();
             return;
         }
-        showAppMenu();
+        super.onBackPressed();
     }
 
-    /** 注入 App 自己的脚本：返回键菜单 + 侧边栏「更改域名」入口（脚本内部有幂等判断）。 */
+    /** 注入侧边栏「更改域名」入口（脚本内部有幂等判断）。 */
     private void injectScripts() {
         if (web == null) return;
-        String[] names = {"menu.js", "inject.js"};
-        for (String name : names) {
-            String js = SetupPage.read(this, name);
-            if (js == null) continue;
-            try {
-                web.evaluateJavascript(js, null);
-            } catch (Exception ignored) {
-            }
-        }
-    }
-
-    /** 原生 AlertDialog 换成 App 自己的菜单；页面里没有菜单脚本时退化成退出。 */
-    private void showAppMenu() {
-        if (web == null) {
-            finish();
-            return;
-        }
+        String js = SetupPage.read(this, "inject.js");
+        if (js == null) return;
         try {
-            web.evaluateJavascript(
-                    "(function(){if(window.__zqMenu){window.__zqMenu.showCenter();return 1}return 0})()",
-                    new ValueCallback<String>() {
-                        @Override
-                        public void onReceiveValue(String value) {
-                            if (!"1".equals(value)) finish();
-                        }
-                    });
-        } catch (Exception e) {
-            finish();
-        }
-    }
-
-    private void doMenuAction(String action) {
-        if ("domain".equals(action)) {
-            showSetupPage();
-        } else if ("back".equals(action)) {
-            if (web != null && web.canGoBack()) web.goBack();
-        } else if ("reload".equals(action)) {
-            loadHome(true);
-        } else if ("quit".equals(action)) {
-            finish();
+            web.evaluateJavascript(js, null);
+        } catch (Exception ignored) {
         }
     }
 

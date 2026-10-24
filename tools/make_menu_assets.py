@@ -10,8 +10,6 @@ ROOT = os.path.abspath(os.path.join(HERE, ".."))
 SRC = os.path.join(HERE, "menu.js")
 
 COPIES = [
-    os.path.join(ROOT, "desktop", "windows", "menu.js"),
-    os.path.join(ROOT, "app", "src", "main", "assets", "menu.js"),
 ]
 
 C_HEADER = os.path.join(ROOT, "desktop", "linux", "menu_js.h")
