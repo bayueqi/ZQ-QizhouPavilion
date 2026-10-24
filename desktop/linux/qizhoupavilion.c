@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "menu_js.h"
+
 #define APP_DIR "QizhouPavilion"
 
 static GtkWidget *main_window = NULL;
@@ -144,6 +146,34 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer dat
     return FALSE;
 }
 
+/* ---------- 自绘右键菜单 ---------- */
+
+static void on_load_changed(WebKitWebView *view, WebKitLoadEvent load_event, gpointer user_data)
+{
+    (void)user_data;
+    if (load_event == WEBKIT_LOAD_FINISHED)
+        webkit_web_view_run_javascript(view, MENU_JS, NULL, NULL, NULL);
+}
+
+static gboolean on_context_menu(WebKitWebView *view, WebKitContextMenu *menu,
+                                GdkEvent *event, WebKitHitTestResult *hit_test,
+                                gpointer user_data)
+{
+    (void)view;
+    (void)menu;
+    (void)hit_test;
+    (void)user_data;
+    double x = 0;
+    double y = 0;
+    if (event != NULL && gdk_event_get_coords(event, &x, &y)) {
+        char *script = g_strdup_printf(
+            "window.__zqMenu&&window.__zqMenu.show(%d,%d);", (int)x, (int)y);
+        webkit_web_view_run_javascript(WEBKIT_WEB_VIEW(web_view), script, NULL, NULL, NULL);
+        g_free(script);
+    }
+    return TRUE; /* 吃掉 WebKit 自带的英文菜单 */
+}
+
 /* ---------- 标题栏里的菜单 ---------- */
 
 static void on_menu_change(GtkMenuItem *item, gpointer data)
@@ -247,6 +277,8 @@ int main(int argc, char **argv)
     web_view = webkit_web_view_new();
     gtk_container_add(GTK_CONTAINER(main_window), web_view);
     g_signal_connect(main_window, "key-press-event", G_CALLBACK(on_key_press), NULL);
+    g_signal_connect(web_view, "load-changed", G_CALLBACK(on_load_changed), NULL);
+    g_signal_connect(web_view, "context-menu", G_CALLBACK(on_context_menu), NULL);
 
     webkit_web_view_load_uri(WEBKIT_WEB_VIEW(web_view), url);
     g_free(url);

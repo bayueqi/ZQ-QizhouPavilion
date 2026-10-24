@@ -2,9 +2,7 @@ package com.qizhouge.nav;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.drawable.ColorDrawable;
@@ -15,6 +13,7 @@ import android.text.TextUtils;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -253,6 +252,10 @@ public class MainActivity extends Activity {
             if (homeUrl != null) loadHome(false);
             return true;
         }
+        if (text.startsWith("menu:")) {
+            doMenuAction(text.substring(5));
+            return true;
+        }
         String url = normalize(text);
         if (url == null) return true;
         homeUrl = url;
@@ -307,7 +310,10 @@ public class MainActivity extends Activity {
         @Override
         public void onPageFinished(WebView view, String url) {
             revealPage();
-            if (homeUrl != null && !inSetup) cache.refreshAsync(homeUrl);
+            if (homeUrl != null && !inSetup) {
+                cache.refreshAsync(homeUrl);
+                injectMenu();
+            }
         }
 
         @Override
@@ -342,26 +348,50 @@ public class MainActivity extends Activity {
             web.goBack();
             return;
         }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.app_name)
-                .setItems(new CharSequence[]{
-                        getString(R.string.menu_refresh),
-                        getString(R.string.menu_change),
-                        getString(R.string.menu_exit)
-                }, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        if (which == 0) {
-                            loadHome(true);
-                        } else if (which == 1) {
-                            showSetupPage();
-                        } else {
-                            finish();
+        showAppMenu();
+    }
+
+    /** 每次页面加载完注入自绘菜单；页面里已有 __zqMenu 时脚本会自己跳过。 */
+    private void injectMenu() {
+        if (web == null) return;
+        String js = SetupPage.read(this, "menu.js");
+        if (js == null) return;
+        try {
+            web.evaluateJavascript(js, null);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 原生 AlertDialog 换成 App 自己的菜单；页面里没有菜单脚本时退化成退出。 */
+    private void showAppMenu() {
+        if (web == null) {
+            finish();
+            return;
+        }
+        try {
+            web.evaluateJavascript(
+                    "(function(){if(window.__zqMenu){window.__zqMenu.showCenter();return 1}return 0})()",
+                    new ValueCallback<String>() {
+                        @Override
+                        public void onReceiveValue(String value) {
+                            if (!"1".equals(value)) finish();
                         }
-                    }
-                })
-                .setNegativeButton(R.string.cancel, null)
-                .show();
+                    });
+        } catch (Exception e) {
+            finish();
+        }
+    }
+
+    private void doMenuAction(String action) {
+        if ("domain".equals(action)) {
+            showSetupPage();
+        } else if ("back".equals(action)) {
+            if (web != null && web.canGoBack()) web.goBack();
+        } else if ("reload".equals(action)) {
+            loadHome(true);
+        } else if ("quit".equals(action)) {
+            finish();
+        }
     }
 
     // ---------- 生命周期 ----------
@@ -458,7 +488,7 @@ public class MainActivity extends Activity {
         private static String template;
 
         static String build(Context ctx, String current) {
-            if (template == null) template = read(ctx);
+            if (template == null) template = read(ctx, "setup.html");
             if (template == null) return null;
             String safe = current == null
                     ? ""
@@ -466,10 +496,11 @@ public class MainActivity extends Activity {
             return template.replace("__CURRENT__", safe);
         }
 
-        private static String read(Context ctx) {
+        /** 读 assets 里的文本资源。 */
+        static String read(Context ctx, String name) {
             InputStream in = null;
             try {
-                in = ctx.getAssets().open("setup.html");
+                in = ctx.getAssets().open(name);
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 byte[] buf = new byte[8192];
                 int n;
