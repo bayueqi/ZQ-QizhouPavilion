@@ -18,6 +18,8 @@
     <Optimize>true</Optimize>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <!-- 逐显示器 DPI 感知，见 app.manifest -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- 必须锁定 x64：否则 AnyCPU/Prefer32Bit 会加载位数不符的 WebView2Loader.dll（0x8007000B） -->
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
@@ -31,6 +33,8 @@
   <ItemGroup>
     <EmbeddedResource Include="setup.html" />
     <None Remove="setup.html" />
+    <EmbeddedResource Include="menu.js" />
+    <None Remove="menu.js" />
   </ItemGroup>
 
   <ItemGroup>

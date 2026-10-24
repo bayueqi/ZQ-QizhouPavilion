@@ -14,15 +14,21 @@ namespace QizhouPavilion
         private readonly WebView2 web = new WebView2();
         private readonly string startUrl;
         private bool coreReady;
+        private bool inSetup;
 
         public MainForm(string url)
         {
             startUrl = url;
             Text = "琪舟阁";
-            ClientSize = new Size(1100, 760);
-            StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = new Size(420, 320);
+            AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = ColorTranslator.FromHtml("#FDF8F3");
+            StartPosition = FormStartPosition.CenterScreen;
+            MinimumSize = new Size(560, 420);
+            // 按屏幕工作区比例开窗，避免固定像素在 125%/150% 缩放下尺寸失真
+            Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+            ClientSize = new Size(
+                Math.Max(620, Math.Min(1160, (int)(wa.Width * 0.82))),
+                Math.Max(460, Math.Min(820, (int)(wa.Height * 0.86))));
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
             web.Dock = DockStyle.Fill;
@@ -70,12 +76,18 @@ namespace QizhouPavilion
             coreReady = true;
 
             CoreWebView2Settings st = web.CoreWebView2.Settings;
-            st.AreDefaultContextMenusEnabled = true;
             st.IsStatusBarEnabled = false;
             st.AreDevToolsEnabled = false;
             st.IsZoomControlEnabled = true;
             string ua = st.UserAgent;
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
+
+            // 自绘右键菜单，替掉 WebView2 自带的英文原生菜单
+            string menuJs = Resources.Load("menu.js");
+            if (menuJs != null)
+            {
+                await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(menuJs);
+            }
 
             web.CoreWebView2.WebMessageReceived += OnWebMessage;
             web.CoreWebView2.ContextMenuRequested += OnContextMenu;
@@ -83,11 +95,20 @@ namespace QizhouPavilion
             web.CoreWebView2.NewWindowRequested += (s, e) =>
             {
                 e.Handled = true;
-                web.CoreWebView2.Navigate(e.Uri);
+                NavigateTo(e.Uri);
             };
 
-            if (url != null) web.CoreWebView2.Navigate(url);
+            if (url != null) NavigateTo(url);
             else ShowSetupPage(null);
+        }
+
+        private void NavigateTo(string url)
+        {
+            if (!coreReady) return;
+            inSetup = false;
+            // 正常浏览时用自绘菜单；欢迎页需要原生的复制/粘贴，见 ShowSetupPage
+            web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+            web.CoreWebView2.Navigate(url);
         }
 
         private void ShowSetupPage(string current)
@@ -95,48 +116,25 @@ namespace QizhouPavilion
             if (!coreReady) return;
             string html = SetupPage.Build(current);
             if (html == null) return;
+            inSetup = true;
+            // 欢迎页放行原生菜单，否则输入框里没法右键粘贴域名
+            web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             web.CoreWebView2.NavigateToString(html);
         }
 
-        /// <summary>
-        /// 右键菜单顶部插入 App 自己的入口，这样不记快捷键也能换域名 / 退出。
-        /// </summary>
         private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
         {
-            if (!coreReady) return;
-            CoreWebView2Environment env = web.CoreWebView2.Environment;
-            var items = e.MenuItems;
-
-            CoreWebView2ContextMenuItem change =
-                env.CreateContextMenuItem("更换导航站域名", null, CoreWebView2ContextMenuItemKind.Command);
-            change.CustomItemSelected += delegate { BeginInvoke((Action)(() => ShowSetupPage(Config.Load()))); };
-
-            CoreWebView2ContextMenuItem back =
-                env.CreateContextMenuItem("后退", null, CoreWebView2ContextMenuItemKind.Command);
-            back.CustomItemSelected += delegate
+            if (!coreReady || inSetup) return;
+            e.Handled = true;
+            Point p = e.Location;
+            try
             {
-                BeginInvoke((Action)(() =>
-                {
-                    if (web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
-                }));
-            };
-
-            CoreWebView2ContextMenuItem reload =
-                env.CreateContextMenuItem("刷新", null, CoreWebView2ContextMenuItemKind.Command);
-            reload.CustomItemSelected += delegate { BeginInvoke((Action)(() => web.CoreWebView2.Reload())); };
-
-            CoreWebView2ContextMenuItem quit =
-                env.CreateContextMenuItem("退出琪舟阁", null, CoreWebView2ContextMenuItemKind.Command);
-            quit.CustomItemSelected += delegate { BeginInvoke((Action)(() => Close())); };
-
-            CoreWebView2ContextMenuItem sep =
-                env.CreateContextMenuItem("", null, CoreWebView2ContextMenuItemKind.Separator);
-
-            items.Insert(0, sep);
-            items.Insert(0, quit);
-            items.Insert(0, reload);
-            items.Insert(0, back);
-            items.Insert(0, change);
+                web.CoreWebView2.ExecuteScriptAsync(
+                    "window.__zqMenu&&window.__zqMenu.show(" + p.X + "," + p.Y + ")");
+            }
+            catch
+            {
+            }
         }
 
         private void OnWebMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -146,11 +144,17 @@ namespace QizhouPavilion
             catch { return; }
             if (string.IsNullOrWhiteSpace(text)) return;
 
+            if (text.StartsWith("menu:", StringComparison.Ordinal))
+            {
+                DoMenuAction(text.Substring(5));
+                return;
+            }
+
             // 欢迎页的 ✕ —— 回到原来的站
             if (text == "cancel")
             {
                 string current = Config.Load();
-                if (current != null) web.CoreWebView2.Navigate(current);
+                if (current != null) NavigateTo(current);
                 return;
             }
 
@@ -158,7 +162,27 @@ namespace QizhouPavilion
             if (url == null) return;
 
             Config.Save(url);
-            web.CoreWebView2.Navigate(url);
+            NavigateTo(url);
+        }
+
+        private void DoMenuAction(string action)
+        {
+            if (action == "domain")
+            {
+                ShowSetupPage(Config.Load());
+            }
+            else if (action == "back")
+            {
+                if (web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
+            }
+            else if (action == "reload")
+            {
+                web.CoreWebView2.Reload();
+            }
+            else if (action == "quit")
+            {
+                Close();
+            }
         }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
@@ -172,6 +196,11 @@ namespace QizhouPavilion
             else if (e.Control && e.KeyCode == Keys.L)
             {
                 ShowSetupPage(Config.Load());
+                e.Handled = true;
+            }
+            else if (e.Alt && e.KeyCode == Keys.Left)
+            {
+                if (web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
                 e.Handled = true;
             }
         }
@@ -195,26 +224,14 @@ namespace QizhouPavilion
         }
     }
 
-    internal static class SetupPage
+    internal static class Resources
     {
-        private static string template;
-
-        public static string Build(string current)
+        public static string Load(string suffix)
         {
-            if (template == null) template = ReadResource();
-            if (template == null) return null;
-            string safe = (current ?? "")
-                .Replace("\\", "\\\\")
-                .Replace("\"", "\\\"");
-            return template.Replace("__CURRENT__", safe);
-        }
-
-        private static string ReadResource()
-        {
-            var asm = typeof(SetupPage).Assembly;
+            var asm = typeof(Resources).Assembly;
             foreach (string name in asm.GetManifestResourceNames())
             {
-                if (!name.EndsWith("setup.html", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
                 using (Stream s = asm.GetManifestResourceStream(name))
                 {
                     if (s == null) return null;
@@ -225,6 +242,21 @@ namespace QizhouPavilion
                 }
             }
             return null;
+        }
+    }
+
+    internal static class SetupPage
+    {
+        private static string template;
+
+        public static string Build(string current)
+        {
+            if (template == null) template = Resources.Load("setup.html");
+            if (template == null) return null;
+            string safe = (current ?? "")
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"");
+            return template.Replace("__CURRENT__", safe);
         }
     }
 
