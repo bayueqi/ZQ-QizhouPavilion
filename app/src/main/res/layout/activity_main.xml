@@ -99,4 +99,12 @@
         </LinearLayout>
     </FrameLayout>
 
+    <!-- 网页视频全屏播放时，把内核给的 Surface 塞到这里，覆盖在最上层 -->
+    <FrameLayout
+        android:id="@+id/fullscreen"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FF000000"
+        android:visibility="gone" />
+
 </FrameLayout>

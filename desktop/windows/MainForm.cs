@@ -129,9 +129,8 @@ namespace QizhouPavilion
             if (string.IsNullOrWhiteSpace(url)) url = Config.Load();
             if (!string.IsNullOrWhiteSpace(url)) url = UrlUtil.Normalize(url);
 
-            string dataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "QizhouPavilion", "WebView2");
+            // 便携模式：配置和 WebView2 数据都放在 exe 同目录的 data 里，不往 AppData 里塞
+            string dataDir = Path.Combine(Config.AppDir, "data", "WebView2");
             Directory.CreateDirectory(dataDir);
 
             CoreWebView2Environment env;
@@ -499,20 +498,22 @@ namespace QizhouPavilion
 
     internal static class Config
     {
+        /** exe 所在目录：配置、缓存全部放这里面，卸载时删整个文件夹就干净了。 */
+        public static string AppDir
+        {
+            get { return AppDomain.CurrentDomain.BaseDirectory; }
+        }
+
         private static string FilePath
         {
-            get
-            {
-                return Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "QizhouPavilion", "home.txt");
-            }
+            get { return Path.Combine(AppDir, "data", "home.txt"); }
         }
 
         public static string Load()
         {
             try
             {
+                if (!File.Exists(FilePath)) MigrateFromLegacy();
                 if (!File.Exists(FilePath)) return null;
                 string text = File.ReadAllText(FilePath).Trim();
                 return text.Length == 0 ? null : text;
@@ -520,6 +521,24 @@ namespace QizhouPavilion
             catch
             {
                 return null;
+            }
+        }
+
+        /** 老版本把域名存在 AppData 里，第一次运行时搬过来，免得重新填。 */
+        private static void MigrateFromLegacy()
+        {
+            try
+            {
+                string legacy = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "QizhouPavilion", "home.txt");
+                if (!File.Exists(legacy)) return;
+                string dir = Path.GetDirectoryName(FilePath);
+                if (dir != null) Directory.CreateDirectory(dir);
+                File.Copy(legacy, FilePath, true);
+            }
+            catch
+            {
             }
         }
 

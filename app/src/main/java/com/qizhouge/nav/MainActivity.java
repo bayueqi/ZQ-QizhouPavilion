@@ -20,6 +20,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -39,6 +40,10 @@ public class MainActivity extends Activity {
     private View splash;
     private View loadingBox;
     private View errorBox;
+    private FrameLayout fullscreenBox;
+
+    private View fullscreenView;
+    private WebChromeClient.CustomViewCallback fullscreenCallback;
 
     private HtmlCache cache;
     private String homeUrl;
@@ -59,6 +64,7 @@ public class MainActivity extends Activity {
         splash = findViewById(R.id.splash);
         loadingBox = findViewById(R.id.loadingBox);
         errorBox = findViewById(R.id.errorBox);
+        fullscreenBox = (FrameLayout) findViewById(R.id.fullscreen);
 
         initWebView();
 
@@ -339,12 +345,79 @@ public class MainActivity extends Activity {
         public void onProgressChanged(WebView view, int newProgress) {
             if (newProgress >= 100) revealPage();
         }
+
+        /** 网页视频点全屏时，内核会把播放 Surface 交给我们，塞进全屏容器。 */
+        @Override
+        public void onShowCustomView(View view, CustomViewCallback callback) {
+            if (fullscreenView != null) {
+                callback.onCustomViewHidden();
+                return;
+            }
+            fullscreenView = view;
+            fullscreenCallback = callback;
+            if (fullscreenBox != null) {
+                fullscreenBox.addView(view);
+                fullscreenBox.setVisibility(View.VISIBLE);
+            }
+            if (web != null) web.setVisibility(View.GONE);
+            enterImmersive();
+        }
+
+        @Override
+        public void onHideCustomView() {
+            exitFullscreen();
+        }
+    }
+
+    private void exitFullscreen() {
+        if (fullscreenView == null) return;
+        if (fullscreenBox != null) {
+            fullscreenBox.removeAllViews();
+            fullscreenBox.setVisibility(View.GONE);
+        }
+        if (web != null) web.setVisibility(View.VISIBLE);
+        if (fullscreenCallback != null) {
+            try {
+                fullscreenCallback.onCustomViewHidden();
+            } catch (Exception ignored) {
+            }
+            fullscreenCallback = null;
+        }
+        fullscreenView = null;
+        exitImmersive();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void enterImmersive() {
+        try {
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        } catch (Exception ignored) {
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void exitImmersive() {
+        try {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        } catch (Exception ignored) {
+        }
     }
 
     // ---------- 返回键 ----------
 
     @Override
     public void onBackPressed() {
+        // 视频全屏时，返回键先退出全屏
+        if (fullscreenView != null) {
+            exitFullscreen();
+            return;
+        }
         if (inSetup) {
             if (homeUrl != null) {
                 loadHome(false);
