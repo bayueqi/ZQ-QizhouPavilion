@@ -33,6 +33,8 @@
   <ItemGroup>
     <EmbeddedResource Include="setup.html" />
     <None Remove="setup.html" />
+    <EmbeddedResource Include="inject.js" />
+    <None Remove="inject.js" />
     <EmbeddedResource Include="menu.js" />
     <None Remove="menu.js" />
   </ItemGroup>

@@ -317,7 +317,7 @@ public class MainActivity extends Activity {
             revealPage();
             if (homeUrl != null && !inSetup) {
                 cache.refreshAsync(homeUrl);
-                injectMenu();
+                injectScripts();
             }
         }
 
@@ -356,14 +356,17 @@ public class MainActivity extends Activity {
         showAppMenu();
     }
 
-    /** 每次页面加载完注入自绘菜单；页面里已有 __zqMenu 时脚本会自己跳过。 */
-    private void injectMenu() {
+    /** 注入 App 自己的脚本：返回键菜单 + 侧边栏「更改域名」入口（脚本内部有幂等判断）。 */
+    private void injectScripts() {
         if (web == null) return;
-        String js = SetupPage.read(this, "menu.js");
-        if (js == null) return;
-        try {
-            web.evaluateJavascript(js, null);
-        } catch (Exception ignored) {
+        String[] names = {"menu.js", "inject.js"};
+        for (String name : names) {
+            String js = SetupPage.read(this, name);
+            if (js == null) continue;
+            try {
+                web.evaluateJavascript(js, null);
+            } catch (Exception ignored) {
+            }
         }
     }
 

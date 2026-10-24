@@ -180,6 +180,7 @@ jobs:
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp build/QizhouPavilion "$APP/Contents/MacOS/QizhouPavilion"
           cp desktop/macos/Info.plist "$APP/Contents/Info.plist"
+          cp desktop/macos/inject.js "$APP/Contents/Resources/inject.js"
           iconutil -c icns desktop/macos/icon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
           codesign --force --deep --sign - "$APP"
           ls -R "$APP" | head -20

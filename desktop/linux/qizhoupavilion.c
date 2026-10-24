@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "menu_js.h"
+#include "inject_js.h"
 
 #define APP_DIR "QizhouPavilion"
 
@@ -151,8 +152,10 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer dat
 static void on_load_changed(WebKitWebView *view, WebKitLoadEvent load_event, gpointer user_data)
 {
     (void)user_data;
-    if (load_event == WEBKIT_LOAD_FINISHED)
+    if (load_event == WEBKIT_LOAD_FINISHED) {
         webkit_web_view_run_javascript(view, MENU_JS, NULL, NULL, NULL);
+        webkit_web_view_run_javascript(view, INJECT_JS, NULL, NULL, NULL);
+    }
 }
 
 /* 网页侧边栏的「更改域名」走 zqnavgo:change，这里拦下来 */

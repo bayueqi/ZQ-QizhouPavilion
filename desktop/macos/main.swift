@@ -65,6 +65,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         window.setFrameAutosaveName("QizhouPavilionMain")
 
         let cfg = WKWebViewConfiguration()
+        // 往页面里插「更改域名」入口（不改网页源码）
+        if let injectUrl = Bundle.main.url(forResource: "inject", withExtension: "js"),
+           let injectSource = try? String(contentsOf: injectUrl, encoding: .utf8) {
+            let script = WKUserScript(source: injectSource,
+                                      injectionTime: .atDocumentEnd,
+                                      forMainFrameOnly: true)
+            cfg.userContentController.addUserScript(script)
+        }
         web = WKWebView(frame: frame, configuration: cfg)
         web.autoresizingMask = [.width, .height]
         web.allowsBackForwardNavigationGestures = true

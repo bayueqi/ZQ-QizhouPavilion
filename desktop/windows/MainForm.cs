@@ -13,12 +13,13 @@ namespace QizhouPavilion
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "build 11";
+        private const string BuildTag = "build 12";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
         private CoreWebView2 core;
         private XButtonFilter xFilter;
+        private string injectJs;
         private bool coreReady;
         private bool inSetup;
 
@@ -126,8 +127,35 @@ namespace QizhouPavilion
                 NavigateTo(e.Uri);
             };
 
+            // 往页面里插「更改域名」入口（不改网页源码）
+            injectJs = Resources.Load("inject.js");
+            if (injectJs != null)
+            {
+                try
+                {
+                    await core.AddScriptToExecuteOnDocumentCreatedAsync(injectJs);
+                }
+                catch
+                {
+                }
+                core.NavigationCompleted += OnNavigationCompleted;
+            }
+
             if (url != null) NavigateTo(url);
             else ShowSetupPage(null);
+        }
+
+        /** document-created 阶段注入那次可能 DOM 还没解析完，加载完成后再补一次（脚本自身幂等）。 */
+        private async void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (inSetup || injectJs == null || !coreReady) return;
+            try
+            {
+                await core.ExecuteScriptAsync(injectJs);
+            }
+            catch
+            {
+            }
         }
 
         private void NavigateTo(string url)
