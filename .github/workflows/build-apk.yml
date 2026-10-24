@@ -90,15 +90,13 @@ jobs:
       - name: Publish
         shell: pwsh
         run: |
-          dotnet publish desktop/windows/QizhouPavilion.csproj -c Release -o dist 2>&1 |
-            Tee-Object -FilePath build.log
-          if ($LASTEXITCODE -ne 0) {
-            Add-Content $env:GITHUB_STEP_SUMMARY "### windows build failed"
-            Add-Content $env:GITHUB_STEP_SUMMARY '```'
-            Get-Content build.log -Tail 50 | Add-Content $env:GITHUB_STEP_SUMMARY
-            Add-Content $env:GITHUB_STEP_SUMMARY '```'
-            exit 1
-          }
+          dotnet publish desktop/windows/QizhouPavilion.csproj -c Release -o dist *> build.log
+          $code = $LASTEXITCODE
+          Add-Content $env:GITHUB_STEP_SUMMARY "### windows publish exit=$code"
+          Add-Content $env:GITHUB_STEP_SUMMARY '```'
+          Get-Content build.log -Tail 60 | Add-Content $env:GITHUB_STEP_SUMMARY
+          Add-Content $env:GITHUB_STEP_SUMMARY '```'
+          if ($code -ne 0) { exit 1 }
 
       - name: Package
         run: |
