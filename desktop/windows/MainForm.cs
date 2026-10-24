@@ -279,13 +279,13 @@ namespace QizhouPavilion
                 for (int i = items.Count - 1; i >= 0; i--)
                 {
                     CoreWebView2ContextMenuItem it = items[i];
-                    string name = it.Name ?? "";
-                    if (name.IndexOf("另存为", StringComparison.Ordinal) >= 0 ||
-                        name.IndexOf("打印", StringComparison.Ordinal) >= 0 ||
-                        name.IndexOf("更多工具", StringComparison.Ordinal) >= 0 ||
-                        name.IndexOf("Save as", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        name.IndexOf("Print", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        name.IndexOf("More tools", StringComparison.OrdinalIgnoreCase) >= 0)
+                    string label = it.Label ?? "";
+                    if (label.IndexOf("另存为", StringComparison.Ordinal) >= 0 ||
+                        label.IndexOf("打印", StringComparison.Ordinal) >= 0 ||
+                        label.IndexOf("更多工具", StringComparison.Ordinal) >= 0 ||
+                        label.IndexOf("Save as", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        label.IndexOf("Print", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        label.IndexOf("More tools", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         items.RemoveAt(i);
                     }
