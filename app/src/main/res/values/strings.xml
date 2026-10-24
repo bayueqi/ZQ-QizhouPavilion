@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">琪舟阁</string>
+    <string name="slogan">精品网址导航</string>
+    <string name="setup_desc">输入你部署好的导航站域名\n一次设置，永久记住</string>
+    <string name="setup_hint">例如 nav.example.com</string>
+    <string name="enter">进 入</string>
+    <string name="retry">重 试</string>
+    <string name="change_domain">更换域名</string>
+    <string name="load_failed">打不开这个网址</string>
+    <string name="load_failed_desc">检查域名拼写和网络后重试</string>
+    <string name="setup_invalid">域名格式不对，例如 nav.example.com</string>
+
+    <string name="menu_refresh">刷新页面</string>
+    <string name="menu_change">更换域名</string>
+    <string name="menu_exit">退出</string>
+    <string name="cancel">取消</string>
+</resources>

@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.qizhouge.nav'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.qizhouge.nav"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+        // 留空 = 首次启动由用户输入域名；填入则内置为默认地址
+        buildConfigField "String", "DEFAULT_HOME", "\"\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // 自用包：直接复用 debug 签名，保证后续版本可覆盖安装
+            signingConfig signingConfigs.debug
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // 不下载任何三方依赖，构建只依赖 AGP 本身
+}
+
+dependencies {
+}
