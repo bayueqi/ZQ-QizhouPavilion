@@ -7,13 +7,13 @@ using Microsoft.Web.WebView2.Core;
 namespace QizhouPavilion
 {
     /**
-     * 进程声明为 DPI Unaware（见 app.manifest），整套坐标都在同一套虚拟像素里：
-     * WebView2 的 CSS 坐标、窗体的客户区、鼠标位置一一对应，不会再出现"看着在这里、点下去偏掉"。
-     * 代价是高缩放屏幕上画面由系统整体拉伸，略微发软 —— 换来点击准确。
+     * 进程声明 SystemAware（见 app.manifest），画面按系统缩放清晰渲染。
+     * 点击能对齐的关键是把真实缩放比告诉 WebView2（RasterizationScale），
+     * 并按 DIP 给它 bounds —— 少了这一步它按 100% 算坐标，就会和画面对不上。
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "b13";
+        private const string BuildTag = "b14";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
@@ -32,12 +32,12 @@ namespace QizhouPavilion
             MinimumSize = new Size(480, 360);
             Rectangle wa = Screen.PrimaryScreen.WorkingArea;
             ClientSize = new Size(
-                Math.Max(620, Math.Min(1160, (int)(wa.Width * 0.82))),
-                Math.Max(460, Math.Min(820, (int)(wa.Height * 0.86))));
+                Math.Max(620, (int)(wa.Width * 0.82)),
+                Math.Max(460, (int)(wa.Height * 0.86)));
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             UpdateTitle();
 
-            Resize += delegate { SyncBounds(); UpdateTitle(); };
+            Resize += delegate { SyncBounds(); };
             Shown += OnShown;
 
             // 鼠标侧键（后退/前进），键盘焦点在网页里时也能收到
@@ -53,8 +53,16 @@ namespace QizhouPavilion
         /** 标题栏顺手带上尺寸和 DPI，截图就能看出跑在什么环境下。 */
         private void UpdateTitle()
         {
-            Text = "琪舟阁  " + ClientSize.Width + "×" + ClientSize.Height +
-                   "  DPI " + (DeviceDpi * 100 / 96) + "%  " + BuildTag;
+            Text = "琪舟阁";
+        }
+
+        private double RasterScale
+        {
+            get
+            {
+                double scale = DeviceDpi / 96.0;
+                return scale > 0 ? scale : 1.0;
+            }
         }
 
         public void NavigateForward()
@@ -68,7 +76,10 @@ namespace QizhouPavilion
             if (WindowState == FormWindowState.Minimized) return;
             try
             {
-                controller.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
+                double scale = RasterScale;
+                controller.Bounds = new Rectangle(0, 0,
+                    (int)Math.Round(ClientSize.Width / scale),
+                    (int)Math.Round(ClientSize.Height / scale));
             }
             catch
             {
@@ -110,7 +121,13 @@ namespace QizhouPavilion
             }
 
             controller = await env.CreateCoreWebView2ControllerAsync(Handle);
-            controller.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
+            // 关键两步：告诉 WebView2 真实缩放比，并按 DIP 给 bounds
+            double scale = RasterScale;
+            controller.RasterizationScale = scale;
+            controller.BoundsMode = CoreWebView2BoundsMode.UseRasterPixels;
+            controller.Bounds = new Rectangle(0, 0,
+                (int)Math.Round(ClientSize.Width / scale),
+                (int)Math.Round(ClientSize.Height / scale));
             controller.IsVisible = true;
             controller.ZoomFactor = 1.0;
             controller.AcceleratorKeyPressed += OnAcceleratorKey;
