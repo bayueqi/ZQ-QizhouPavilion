@@ -43,7 +43,21 @@ jobs:
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" > /dev/null || true
 
       - name: Build release APK
-        run: gradle :app:assembleRelease --no-daemon --stacktrace
+        run: |
+          set +e
+          gradle :app:assembleRelease --no-daemon --stacktrace > build.log 2>&1
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            {
+              echo '### android build failed'
+              echo '```'
+              grep -nE "error:|FAILURE|What went wrong|Caused by|Execution failed" build.log | head -30
+              echo '--- tail ---'
+              tail -40 build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $rc
 
       - name: Collect APK
         run: |
@@ -74,7 +88,17 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Publish
-        run: dotnet publish desktop/windows/QizhouPavilion.csproj -c Release -o dist
+        shell: pwsh
+        run: |
+          dotnet publish desktop/windows/QizhouPavilion.csproj -c Release -o dist 2>&1 |
+            Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) {
+            Add-Content $env:GITHUB_STEP_SUMMARY "### windows build failed"
+            Add-Content $env:GITHUB_STEP_SUMMARY '```'
+            Get-Content build.log -Tail 50 | Add-Content $env:GITHUB_STEP_SUMMARY
+            Add-Content $env:GITHUB_STEP_SUMMARY '```'
+            exit 1
+          }
 
       - name: Package
         run: |
@@ -102,8 +126,19 @@ jobs:
       - name: Compile
         run: |
           mkdir -p dist
+          set +e
           gcc -O2 -Wall -o dist/qizhoupavilion desktop/linux/qizhoupavilion.c \
-            $(pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.1)
+            $(pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.1) > build.log 2>&1
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            {
+              echo '### linux build failed'
+              echo '```'
+              tail -50 build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit $rc
+          fi
           cp desktop/linux/qizhoupavilion.png dist/
           cp desktop/linux/qizhoupavilion.desktop dist/
           ls -lh dist
@@ -126,7 +161,18 @@ jobs:
       - name: Compile
         run: |
           mkdir -p build
-          swiftc -O desktop/macos/main.swift -o build/QizhouPavilion
+          set +e
+          swiftc -O desktop/macos/main.swift -o build/QizhouPavilion > build.log 2>&1
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            {
+              echo '### macos build failed'
+              echo '```'
+              tail -50 build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit $rc
+          fi
 
       - name: Bundle .app
         run: |

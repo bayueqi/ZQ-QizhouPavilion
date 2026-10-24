@@ -7,7 +7,8 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "QizhouPavilion"
+        // Android 要求 applicationId 至少两段（必须带点），所以补 .app 后缀
+        applicationId "QizhouPavilion.app"
         minSdk 24
         targetSdk 34
         versionCode 4
