@@ -11,6 +11,8 @@ namespace QizhouPavilion
 {
     internal sealed class MainForm : Form
     {
+        private const string BuildTag = "build 8";
+
         private readonly WebView2 web = new WebView2();
         private readonly string startUrl;
         private string menuJs;
@@ -21,14 +23,13 @@ namespace QizhouPavilion
         public MainForm(string url)
         {
             startUrl = url;
-            Text = "琪舟阁";
-            // 不能再叠加 WinForms 的自动缩放：PerMonitorV2 下它会二次缩放控件，
+            Text = "琪舟阁  v1.0.1 " + BuildTag;
+            // 不能再叠加 WinForms 的自动缩放：会和 app.manifest / app.config 的 DPI 设置打架，
             // 导致 WebView2 的 bounds 与实际客户区不一致，鼠标点击整体偏移。
             AutoScaleMode = AutoScaleMode.None;
             BackColor = ColorTranslator.FromHtml("#FDF8F3");
             StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = new Size(560, 420);
-            // 按屏幕工作区比例开窗，避免固定像素在 125%/150% 缩放下尺寸失真
+            MinimumSize = new Size(480, 360);
             Rectangle wa = Screen.PrimaryScreen.WorkingArea;
             ClientSize = new Size(
                 Math.Max(620, Math.Min(1160, (int)(wa.Width * 0.82))),
@@ -43,7 +44,7 @@ namespace QizhouPavilion
             ClientSizeChanged += OnClientSizeChanged;
         }
 
-        /** 尺寸变化时把 WebView2 的 bounds 钉死在客户区，避免残留旧尺寸导致点击命中错位。 */
+        /** 尺寸一变就把 WebView2 的 bounds 钉死在客户区，避免残留旧尺寸导致点击命中错位。 */
         private void OnClientSizeChanged(object sender, EventArgs e)
         {
             if (web == null) return;
@@ -94,17 +95,21 @@ namespace QizhouPavilion
             string ua = st.UserAgent;
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
 
-            // 自绘右键菜单，替掉 WebView2 自带的英文原生菜单
             menuJs = Resources.Load("menu.js");
             if (menuJs != null)
             {
-                await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(menuJs);
+                try
+                {
+                    await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(menuJs);
+                }
+                catch
+                {
+                }
             }
 
             web.CoreWebView2.WebMessageReceived += OnWebMessage;
             web.CoreWebView2.ContextMenuRequested += OnContextMenu;
             web.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
-            // target=_blank 的链接也在当前窗口打开
             web.CoreWebView2.NewWindowRequested += (s, e) =>
             {
                 e.Handled = true;
@@ -119,7 +124,7 @@ namespace QizhouPavilion
         {
             if (!coreReady) return;
             inSetup = false;
-            // 正常浏览时用自绘菜单；欢迎页需要原生的复制/粘贴，见 ShowSetupPage
+            menuReady = false;
             web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             web.CoreWebView2.Navigate(url);
         }
@@ -135,18 +140,15 @@ namespace QizhouPavilion
             web.CoreWebView2.NavigateToString(html);
         }
 
-        /**
-         * document-created 阶段注入的那次可能因为还没有根元素而没建起来，这里补一次。
-         * menu.js 自身有幂等判断，重复执行没有副作用。
-         */
         private async void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            if (inSetup || menuJs == null || !coreReady) return;
+            if (inSetup || !coreReady) return;
+            if (menuJs == null) return;
             try
             {
-                string result = await web.CoreWebView2.ExecuteScriptAsync(
+                string r = await web.CoreWebView2.ExecuteScriptAsync(
                     menuJs + ";typeof window.__zqMenu;");
-                menuReady = result != null && result.IndexOf("object", StringComparison.Ordinal) >= 0;
+                menuReady = r != null && r.IndexOf("object", StringComparison.Ordinal) >= 0;
             }
             catch
             {
@@ -154,20 +156,59 @@ namespace QizhouPavilion
             }
         }
 
-        private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
+        /**
+         * 右键：优先用页面里的自绘菜单；脚本没装上就退回系统菜单，保证"点了有反应"。
+         */
+        private async void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
         {
-            // 菜单没建起来就放行原生菜单，宁可丑也别点了没反应
-            if (!coreReady || inSetup || !menuReady) return;
+            if (!coreReady || inSetup) return;
             e.Handled = true;
             Point p = e.Location;
+
+            if (menuJs == null)
+            {
+                ShowFallbackMenu(p);
+                return;
+            }
+
+            string js = "(function(){try{" + menuJs +
+                        ";if(!window.__zqMenu){return 'nomenu'}" +
+                        "window.__zqMenu.show(" + p.X + "," + p.Y + ");return 'ok'" +
+                        "}catch(err){return 'err'}})()";
             try
             {
-                web.CoreWebView2.ExecuteScriptAsync(
-                    "window.__zqMenu&&window.__zqMenu.show(" + p.X + "," + p.Y + ")");
+                string r = await web.CoreWebView2.ExecuteScriptAsync(js);
+                if (r == null || r.IndexOf("ok", StringComparison.Ordinal) < 0)
+                {
+                    ShowFallbackMenu(p);
+                }
+                else
+                {
+                    menuReady = true;
+                }
             }
             catch
             {
+                ShowFallbackMenu(p);
             }
+        }
+
+        /** 兜底菜单：自绘脚本没跑起来时才用，至少功能不缺。 */
+        private void ShowFallbackMenu(Point p)
+        {
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("更换导航站域名", null, delegate { ShowSetupPage(Config.Load()); });
+            menu.Items.Add("后退", null, delegate
+            {
+                if (web.CoreWebView2 != null && web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
+            });
+            menu.Items.Add("刷新", null, delegate
+            {
+                if (web.CoreWebView2 != null) web.CoreWebView2.Reload();
+            });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("退出琪舟阁", null, delegate { Close(); });
+            menu.Show(web, p);
         }
 
         private void OnWebMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -183,7 +224,6 @@ namespace QizhouPavilion
                 return;
             }
 
-            // 欢迎页的 ✕ —— 回到原来的站
             if (text == "cancel")
             {
                 string current = Config.Load();
@@ -221,7 +261,12 @@ namespace QizhouPavilion
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
             if (!coreReady) return;
-            if (e.KeyCode == Keys.F5 || (e.Control && e.KeyCode == Keys.R))
+            if (e.Control && e.Shift && e.KeyCode == Keys.D)
+            {
+                ShowDiagnostics();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.F5 || (e.Control && e.KeyCode == Keys.R))
             {
                 web.CoreWebView2.Reload();
                 e.Handled = true;
@@ -236,6 +281,26 @@ namespace QizhouPavilion
                 if (web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
                 e.Handled = true;
             }
+        }
+
+        private void ShowDiagnostics()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(BuildTag);
+            sb.AppendLine("DeviceDpi = " + DeviceDpi + "  (" + (DeviceDpi * 100 / 96) + "%)");
+            sb.AppendLine("ClientSize = " + ClientSize.Width + " x " + ClientSize.Height);
+            if (web != null)
+            {
+                sb.AppendLine("WebView2 = " + web.Bounds.Width + " x " + web.Bounds.Height +
+                              " @ " + web.Bounds.X + "," + web.Bounds.Y);
+            }
+            Rectangle b = Screen.PrimaryScreen.Bounds;
+            Rectangle w = Screen.PrimaryScreen.WorkingArea;
+            sb.AppendLine("Screen = " + b.Width + " x " + b.Height +
+                          "  work = " + w.Width + " x " + w.Height);
+            sb.AppendLine("AutoScaleMode = " + AutoScaleMode);
+            sb.AppendLine("menuReady = " + menuReady);
+            MessageBox.Show(sb.ToString(), "诊断信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void ShowFatal(Exception ex)
