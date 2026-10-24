@@ -68,7 +68,10 @@
       '.it{padding:15px 34px;border-radius:12px;color:#1F2937;white-space:nowrap;text-align:center}' +
       '.it:active{background:rgba(48,85,128,.1);color:#254267}' +
       '</style>' +
-      '<div class="mask" id="mask"><div class="card"><div class="it" id="home">返回主页面</div></div></div>';
+      '<div class="mask" id="mask"><div class="card">' +
+      '<div class="it" id="reload">刷新页面</div>' +
+      '<div class="it" id="home">返回主页面</div>' +
+      '</div></div>';
 
     document.documentElement.appendChild(host);
 
@@ -82,18 +85,21 @@
     });
 
     // click 和 touchend 都接，防止移动端 click 被吞
-    var fired = false;
-    function go(e) {
-      if (fired) return;
-      fired = true;
-      if (e && e.cancelable) e.preventDefault();
-      if (e && e.stopPropagation) e.stopPropagation();
-      close();
-      send('home');
+    function act(node, action) {
+      var done = false;
+      function go(e) {
+        if (done) return;
+        done = true;
+        if (e && e.cancelable) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        close();
+        send(action);
+      }
+      node.addEventListener('click', go);
+      node.addEventListener('touchend', go);
     }
-    var btn = shadow.getElementById('home');
-    btn.addEventListener('click', go);
-    btn.addEventListener('touchend', go);
+    act(shadow.getElementById('reload'), 'reload');
+    act(shadow.getElementById('home'), 'home');
   }
 
   function bindLongPress() {

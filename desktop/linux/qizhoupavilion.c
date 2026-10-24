@@ -194,6 +194,8 @@ static gboolean on_decide_policy(WebKitWebView *view, WebKitPolicyDecision *deci
                 webkit_web_view_load_uri(view, home);
                 g_free(home);
             }
+        } else if (g_strcmp0(decoded, "reload") == 0) {
+            webkit_web_view_reload(view);
         }
         g_free(decoded);
     }

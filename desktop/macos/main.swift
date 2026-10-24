@@ -117,6 +117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
                 changeDomain(nil)
             } else if text == "home" {
                 goHome(nil)
+            } else if text == "reload" {
+                web?.reload()
             }
             return
         }

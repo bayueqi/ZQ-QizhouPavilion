@@ -251,6 +251,12 @@ namespace QizhouPavilion
                 return;
             }
 
+            if (text == "reload")
+            {
+                if (core != null) core.Reload();
+                return;
+            }
+
             string url = UrlUtil.Normalize(text);
             if (url == null) return;
 

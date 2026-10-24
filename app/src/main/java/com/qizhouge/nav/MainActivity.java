@@ -256,9 +256,13 @@ public class MainActivity extends Activity {
             showSetupPage();
             return true;
         }
-        // 长按屏幕 → 返回主页面
+        // 长按屏幕 → 刷新 / 返回主页面（都强制走网络，避开首屏快照）
+        if ("reload".equals(text)) {
+            loadHome(true);
+            return true;
+        }
         if ("home".equals(text)) {
-            loadHome(false);
+            loadHome(true);
             return true;
         }
         String url = normalize(text);
