@@ -392,6 +392,19 @@ public class MainActivity extends Activity {
         return s;
     }
 
+    /**
+     * Cookie 默认是内存缓冲、异步落盘的，进程被系统回收时最后写入的登录态可能丢失。
+     * 切后台时强制刷盘，保证下次打开仍是登录状态。
+     */
+    @Override
+    protected void onPause() {
+        try {
+            CookieManager.getInstance().flush();
+        } catch (Exception ignored) {
+        }
+        super.onPause();
+    }
+
     @Override
     protected void onDestroy() {
         if (web != null) {

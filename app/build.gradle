@@ -10,8 +10,8 @@ android {
         applicationId "com.qizhouge.nav"
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName "1.1.0"
+        versionCode 3
+        versionName "1.1.1"
         // 留空 = 首次启动由用户输入域名；填入则内置为默认地址
         buildConfigField "String", "DEFAULT_HOME", "\"\""
     }
