@@ -348,6 +348,11 @@ public class MainActivity extends Activity {
         }
 
         @Override
+        public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+            if (!inSetup) syncHistory();
+        }
+
+        @Override
         public void onReceivedError(WebView view, WebResourceRequest request,
                                     WebResourceError error) {
             if (request != null && request.isForMainFrame() && !inSetup) {
@@ -465,9 +470,25 @@ public class MainActivity extends Activity {
         String js = SetupPage.read(this, "inject.js");
         if (js == null) return;
         try {
-            web.evaluateJavascript(js, null);
+            // 接着把历史状态塞进去，保证 __zqHistory 已经存在
+            web.evaluateJavascript(js + ";" + historyCall(), null);
         } catch (Exception ignored) {
         }
+    }
+
+    /** 把「能否后退/前进」告诉长按菜单，菜单据此把不可用的项置灰。 */
+    private void syncHistory() {
+        if (web == null) return;
+        try {
+            web.evaluateJavascript(historyCall(), null);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String historyCall() {
+        if (web == null) return "";
+        return "window.__zqHistory&&window.__zqHistory("
+                + web.canGoBack() + "," + web.canGoForward() + ")";
     }
 
     // ---------- 生命周期 ----------

@@ -31,6 +31,30 @@
   /* ---------- 长按屏幕 → 功能菜单 ---------- */
   var sheetOpen = false;
 
+  // 能否后退/前进由外壳告知（Android 在 onPageFinished / doUpdateVisitedHistory 里回调）。
+  // 外壳没告知时不做置灰，保持和以前一样全部可点。
+  var hist = { known: false, back: true, forward: true };
+  var sheetNodes = null;
+
+  function applyState() {
+    if (!sheetNodes) return;
+    markOff(sheetNodes.back, hist.known && !hist.back);
+    markOff(sheetNodes.forward, hist.known && !hist.forward);
+  }
+
+  function markOff(node, off) {
+    if (!node) return;
+    if (off) node.setAttribute('data-off', '1');
+    else node.removeAttribute('data-off');
+  }
+
+  window.__zqHistory = function (back, forward) {
+    hist.known = true;
+    hist.back = !!back;
+    hist.forward = !!forward;
+    applyState();
+  };
+
   function showHomeSheet() {
     // 已经开着就别再叠一层
     if (sheetOpen) return;
@@ -50,6 +74,8 @@
       '@keyframes zqpop{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}',
       '.it{padding:15px 34px;border-radius:12px;color:#1F2937;white-space:nowrap;text-align:center}',
       '.it:active{background:rgba(48,85,128,.1);color:#254267}',
+      '.it[data-off]{color:#C2C7D0}',
+      '.it[data-off]:active{background:none;color:#C2C7D0}',
       '</style>',
       '<div class="mask" id="mask"><div class="card" id="card">'
     ];
@@ -61,8 +87,15 @@
     shadow.innerHTML = html.join('');
     document.documentElement.appendChild(host);
 
+    sheetNodes = {
+      back: shadow.querySelector('[data-a="back"]'),
+      forward: shadow.querySelector('[data-a="forward"]')
+    };
+    applyState();
+
     function close() {
       sheetOpen = false;
+      sheetNodes = null;
       if (host.parentNode) host.parentNode.removeChild(host);
     }
 
@@ -77,6 +110,7 @@
         var done = false;
         function go(e) {
           if (done) return;
+          if (node.getAttribute('data-off')) return;
           done = true;
           if (e && e.cancelable) e.preventDefault();
           if (e && e.stopPropagation) e.stopPropagation();
