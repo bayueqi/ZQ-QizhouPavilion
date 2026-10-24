@@ -65,6 +65,28 @@ namespace QizhouPavilion
             }
         }
 
+        /**
+         * RasterizationScale 在 .NET Framework 的 WebView2 兼容层里不一定直接暴露，
+         * 用反射设置：有就设，没有就算了（不会因此编译不过）。
+         */
+        private static void SetRasterizationScale(CoreWebView2Controller ctl, double scale)
+        {
+            if (ctl == null) return;
+            try
+            {
+                System.Reflection.PropertyInfo prop = ctl.GetType().GetProperty(
+                    "RasterizationScale",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (prop != null && prop.CanWrite)
+                {
+                    prop.SetValue(ctl, scale, null);
+                }
+            }
+            catch
+            {
+            }
+        }
+
         public void NavigateForward()
         {
             if (core != null && core.CanGoForward) core.GoForward();
@@ -121,10 +143,9 @@ namespace QizhouPavilion
             }
 
             controller = await env.CreateCoreWebView2ControllerAsync(Handle);
-            // 关键两步：告诉 WebView2 真实缩放比，并按 DIP 给 bounds
+            // 关键：告诉 WebView2 真实缩放比，再按 DIP 给 bounds
             double scale = RasterScale;
-            controller.RasterizationScale = scale;
-            controller.BoundsMode = CoreWebView2BoundsMode.UseRasterPixels;
+            SetRasterizationScale(controller, scale);
             controller.Bounds = new Rectangle(0, 0,
                 (int)Math.Round(ClientSize.Width / scale),
                 (int)Math.Round(ClientSize.Height / scale));
@@ -271,7 +292,6 @@ namespace QizhouPavilion
             {
                 Rectangle b = controller.Bounds;
                 sb.AppendLine("Bounds = " + b.Width + " x " + b.Height + " @ " + b.X + "," + b.Y);
-                sb.AppendLine("BoundsMode = " + controller.BoundsMode);
             }
             MessageBox.Show(sb.ToString(), "诊断信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
