@@ -17,6 +17,7 @@ import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
+import android.webkit.DownloadListener;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -45,7 +46,6 @@ public class MainActivity extends Activity {
 
     private HtmlCache cache;
     private String homeUrl;
-    private String homeHost;
     private boolean pageShown;
     private volatile boolean bypassCache;
 
@@ -73,7 +73,6 @@ public class MainActivity extends Activity {
         String saved = sp.getString(KEY_HOME, null);
         if (TextUtils.isEmpty(saved)) saved = BuildConfig.DEFAULT_HOME;
         homeUrl = TextUtils.isEmpty(saved) ? null : saved;
-        homeHost = hostOf(homeUrl);
 
         if (homeUrl == null) {
             showSetupPage();
@@ -128,8 +127,14 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setTextZoom(100);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        // 站内浏览会进到各式各样的站，https 页面里混用 http 资源要放行
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setMediaPlaybackRequiresUserGesture(true);
+        // 去掉 UA 里的 "; wv" 标记，避免站点把 App 当成功能受限的 WebView 而改走精简页
+        String ua = s.getUserAgentString();
+        if (ua != null && ua.contains("; wv")) {
+            s.setUserAgentString(ua.replace("; wv", ""));
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             s.setAlgorithmicDarkeningAllowed(false);
         }
@@ -140,6 +145,17 @@ public class MainActivity extends Activity {
         web.setHorizontalScrollBarEnabled(false);
         web.setWebViewClient(new AppClient());
         web.setWebChromeClient(new AppChrome());
+        // WebView 本身不下载文件，把下载链接交回系统，避免点了没反应
+        web.setDownloadListener(new DownloadListener() {
+            @Override
+            public void onDownloadStart(String url, String userAgent, String contentDisposition,
+                                        String mimeType, long contentLength) {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                } catch (Exception ignored) {
+                }
+            }
+        });
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -204,7 +220,6 @@ public class MainActivity extends Activity {
         }
         setupMsg.setVisibility(View.GONE);
         homeUrl = normalized;
-        homeHost = hostOf(normalized);
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_HOME, normalized).apply();
         hideKeyboard();
         loadHome(false);
@@ -223,26 +238,27 @@ public class MainActivity extends Activity {
 
     // ---------- 路由 ----------
 
+    /**
+     * 网页链接一律留在 App 内打开（导航站里点书签 = 在软件里浏览目标站）。
+     * 只有非 http(s) 的协议（tel:/mailto:/intent: 等）才交给系统处理。
+     */
     private boolean handleUri(Uri uri) {
         if (uri == null) return false;
         String scheme = uri.getScheme();
         if (scheme == null) return false;
-        boolean http = "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
-        if (http && isHomeHost(uri.getHost())) {
-            return false; // 站内（含 /admin）继续在 App 内
+        // 交给 WebView 自己处理
+        if ("javascript".equalsIgnoreCase(scheme) || "about".equalsIgnoreCase(scheme)
+                || "data".equalsIgnoreCase(scheme) || "blob".equalsIgnoreCase(scheme)) {
+            return false;
+        }
+        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+            return false;
         }
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, uri));
         } catch (Exception ignored) {
         }
         return true;
-    }
-
-    private boolean isHomeHost(String host) {
-        if (host == null || homeHost == null) return false;
-        String h = host.toLowerCase();
-        String base = homeHost.toLowerCase();
-        return h.equals(base) || h.endsWith("." + base) || base.endsWith("." + h);
     }
 
     // ---------- 内部类 ----------
@@ -348,16 +364,6 @@ public class MainActivity extends Activity {
     }
 
     // ---------- 工具 ----------
-
-    private static String hostOf(String url) {
-        if (url == null) return null;
-        try {
-            String h = Uri.parse(url).getHost();
-            return h == null ? null : h.toLowerCase();
-        } catch (Exception e) {
-            return null;
-        }
-    }
 
     private static String stripSlash(String s) {
         if (s == null) return "";
