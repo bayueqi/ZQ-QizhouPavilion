@@ -7,13 +7,13 @@ using Microsoft.Web.WebView2.Core;
 namespace QizhouPavilion
 {
     /**
-     * 直接使用 CoreWebView2Controller（不用 WinForms 的 WebView2 控件）：
-     * 那个封装层按 DIP 换算 bounds，窗口不是最大化时会和真实客户区对不上，
-     * 表现就是"画面在这里，点击落到别处"。这里用 UseRawPixels 让它按物理像素走。
+     * 进程声明为 DPI Unaware（见 app.manifest），整套坐标都在同一套虚拟像素里：
+     * WebView2 的 CSS 坐标、窗体的客户区、鼠标位置一一对应，不会再出现"看着在这里、点下去偏掉"。
+     * 代价是高缩放屏幕上画面由系统整体拉伸，略微发软 —— 换来点击准确。
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "build 12";
+        private const string BuildTag = "b13";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
@@ -26,7 +26,6 @@ namespace QizhouPavilion
         public MainForm(string url)
         {
             startUrl = url;
-            Text = "琪舟阁  v1.0.1 " + BuildTag;
             AutoScaleMode = AutoScaleMode.None;
             BackColor = ColorTranslator.FromHtml("#FDF8F3");
             StartPosition = FormStartPosition.CenterScreen;
@@ -36,8 +35,9 @@ namespace QizhouPavilion
                 Math.Max(620, Math.Min(1160, (int)(wa.Width * 0.82))),
                 Math.Max(460, Math.Min(820, (int)(wa.Height * 0.86))));
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+            UpdateTitle();
 
-            Resize += delegate { SyncBounds(); };
+            Resize += delegate { SyncBounds(); UpdateTitle(); };
             Shown += OnShown;
 
             // 鼠标侧键（后退/前进），键盘焦点在网页里时也能收到
@@ -48,6 +48,13 @@ namespace QizhouPavilion
         public void NavigateBack()
         {
             if (core != null && core.CanGoBack) core.GoBack();
+        }
+
+        /** 标题栏顺手带上尺寸和 DPI，截图就能看出跑在什么环境下。 */
+        private void UpdateTitle()
+        {
+            Text = "琪舟阁  " + ClientSize.Width + "×" + ClientSize.Height +
+                   "  DPI " + (DeviceDpi * 100 / 96) + "%  " + BuildTag;
         }
 
         public void NavigateForward()
@@ -103,9 +110,9 @@ namespace QizhouPavilion
             }
 
             controller = await env.CreateCoreWebView2ControllerAsync(Handle);
-            controller.BoundsMode = CoreWebView2BoundsMode.UseRawPixels;
             controller.Bounds = new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
             controller.IsVisible = true;
+            controller.ZoomFactor = 1.0;
             controller.AcceleratorKeyPressed += OnAcceleratorKey;
 
             core = controller.CoreWebView2;
@@ -114,7 +121,8 @@ namespace QizhouPavilion
             CoreWebView2Settings st = core.Settings;
             st.IsStatusBarEnabled = false;
             st.AreDevToolsEnabled = false;
-            st.IsZoomControlEnabled = true;
+            // 缩放交给网页自己的 viewport，App 不再提供缩放，免得缩放系数和点击坐标对不上
+            st.IsZoomControlEnabled = false;
             // 右键交回给网页自己（复制、另存为都还在）
             st.AreDefaultContextMenusEnabled = true;
             string ua = st.UserAgent;
