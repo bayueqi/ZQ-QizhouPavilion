@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -13,7 +14,7 @@ namespace QizhouPavilion
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "b14";
+        private const string BuildTag = "b15";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
@@ -167,6 +168,7 @@ namespace QizhouPavilion
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
 
             core.WebMessageReceived += OnWebMessage;
+            core.ContextMenuRequested += OnContextMenu;
             core.NewWindowRequested += (s, e) =>
             {
                 e.Handled = true;
@@ -220,7 +222,7 @@ namespace QizhouPavilion
             core.NavigateToString(html);
         }
 
-        /** 网页里的消息：欢迎页提交地址、取消，以及侧边栏的"更改域名"。 */
+        /** 网页里的消息：欢迎页提交地址 / 取消、侧边栏「更改域名」、长按「返回主页面」。 */
         private void OnWebMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
             string text;
@@ -241,11 +243,78 @@ namespace QizhouPavilion
                 return;
             }
 
+            if (text == "home")
+            {
+                GoHome();
+                return;
+            }
+
             string url = UrlUtil.Normalize(text);
             if (url == null) return;
 
             Config.Save(url);
             NavigateTo(url);
+        }
+
+        /** 回导航站首页，不保留历史。 */
+        private void GoHome()
+        {
+            string home = Config.Load();
+            if (home != null) NavigateTo(home);
+        }
+
+        private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
+        {
+            if (!coreReady || inSetup) return;
+            e.Handled = true;
+            ShowAppMenu(e.Location);
+        }
+
+        private void ShowAppMenu(Point p)
+        {
+            var menu = new ContextMenuStrip();
+            menu.Renderer = new RoundMenuRenderer();
+            menu.ShowImageMargin = false;
+            menu.ShowCheckMargin = false;
+            menu.BackColor = Color.White;
+            menu.Font = new Font("Microsoft YaHei UI", 9.5F);
+            menu.Padding = new Padding(0, 6, 0, 6);
+            menu.DropShadowEnabled = true;
+
+            AddMenuItem(menu, "返回主页面", delegate { GoHome(); });
+            AddMenuItem(menu, "后退", delegate { NavigateBack(); });
+            AddMenuItem(menu, "刷新", delegate
+            {
+                if (core != null) core.Reload();
+            });
+            AddMenuItem(menu, "更换域名", delegate { ShowSetupPage(Config.Load()); });
+            menu.Items.Add(new ToolStripSeparator());
+            AddMenuItem(menu, "退出琪舟阁", delegate { Close(); });
+
+            menu.Opened += delegate
+            {
+                try
+                {
+                    using (GraphicsPath path = RoundMenuRenderer.RoundedPath(
+                        new Rectangle(0, 0, menu.Width, menu.Height), 10))
+                    {
+                        menu.Region = new Region(path);
+                    }
+                }
+                catch
+                {
+                }
+            };
+
+            menu.Show(this, p);
+        }
+
+        private static void AddMenuItem(ContextMenuStrip menu, string text, EventHandler onClick)
+        {
+            var item = new ToolStripMenuItem(text);
+            item.Padding = new Padding(14, 5, 14, 5);
+            item.Click += onClick;
+            menu.Items.Add(item);
         }
 
         /** 键盘焦点在网页里时 Form.KeyDown 收不到，只能从 controller 这一层拦。 */
@@ -358,6 +427,75 @@ namespace QizhouPavilion
                 return true;
             }
             return false;
+        }
+    }
+
+    /** 自绘右键菜单：白底圆角、悬停高亮，跟 App 其它界面同一套观感。 */
+    internal sealed class RoundMenuRenderer : ToolStripProfessionalRenderer
+    {
+        public static GraphicsPath RoundedPath(Rectangle r, int radius)
+        {
+            var path = new GraphicsPath();
+            int d = radius * 2;
+            if (d > r.Width) d = r.Width;
+            if (d > r.Height) d = r.Height;
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (GraphicsPath path = RoundedPath(new Rectangle(Point.Empty, e.ToolStrip.Size), 10))
+            using (var brush = new SolidBrush(Color.White))
+            {
+                e.Graphics.FillPath(brush, path);
+            }
+        }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (GraphicsPath path = RoundedPath(
+                new Rectangle(0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1), 10))
+            using (var pen = new Pen(Color.FromArgb(30, 16, 24, 40)))
+            {
+                e.Graphics.DrawPath(pen, path);
+            }
+        }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (!e.Item.Selected) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var r = new Rectangle(4, 1, e.Item.Width - 8, e.Item.Height - 2);
+            using (GraphicsPath path = RoundedPath(r, 7))
+            using (var brush = new SolidBrush(Color.FromArgb(26, 48, 85, 128)))
+            {
+                e.Graphics.FillPath(brush, path);
+            }
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = e.Item.Selected
+                ? ColorTranslator.FromHtml("#254267")
+                : ColorTranslator.FromHtml("#1F2937");
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+        {
+            Rectangle r = e.Item.Bounds;
+            using (var pen = new Pen(Color.FromArgb(24, 16, 24, 40)))
+            {
+                e.Graphics.DrawLine(pen, r.Left + 12, r.Top + r.Height / 2,
+                    r.Right - 12, r.Top + r.Height / 2);
+            }
         }
     }
 

@@ -113,7 +113,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             let raw = url.absoluteString
             let body = raw.hasPrefix(prefix) ? String(raw.dropFirst(prefix.count)) : raw
             let text = body.removingPercentEncoding ?? body
-            if text == "change" { changeDomain(nil) }
+            if text == "change" {
+                changeDomain(nil)
+            } else if text == "home" {
+                goHome(nil)
+            }
             return
         }
         decisionHandler(.allow)
@@ -125,6 +129,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     @objc func goBack(_ sender: Any?) {
         if web?.canGoBack == true { web?.goBack() }
+    }
+
+    /// 回导航站首页
+    @objc func goHome(_ sender: Any?) {
+        guard let home = loadSavedURL(), let url = normalize(home) else { return }
+        web?.load(URLRequest(url: url))
     }
 
     @objc func changeDomain(_ sender: Any?) {
@@ -146,6 +156,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         let reloadItem = NSMenuItem(title: "刷新", action: #selector(reloadPage(_:)), keyEquivalent: "r")
         reloadItem.target = self
         appMenu.addItem(reloadItem)
+
+        let homeItem = NSMenuItem(title: "返回主页面", action: #selector(goHome(_:)), keyEquivalent: "0")
+        homeItem.target = self
+        appMenu.addItem(homeItem)
 
         let backItem = NSMenuItem(title: "后退", action: #selector(goBack(_:)), keyEquivalent: "[")
         backItem.target = self

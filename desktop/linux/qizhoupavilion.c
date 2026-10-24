@@ -188,6 +188,12 @@ static gboolean on_decide_policy(WebKitWebView *view, WebKitPolicyDecision *deci
                 webkit_web_view_load_uri(view, u);
                 g_free(u);
             }
+        } else if (g_strcmp0(decoded, "home") == 0) {
+            char *home = load_url();
+            if (home != NULL) {
+                webkit_web_view_load_uri(view, home);
+                g_free(home);
+            }
         }
         g_free(decoded);
     }

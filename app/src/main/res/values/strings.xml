@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">琪舟阁</string>
-    <string name="slogan">精品网址导航</string>
     <string name="retry">重 试</string>
     <string name="change_domain">更换域名</string>
     <string name="load_failed">打不开这个网址</string>

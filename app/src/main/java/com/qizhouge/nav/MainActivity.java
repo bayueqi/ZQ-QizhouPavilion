@@ -256,6 +256,11 @@ public class MainActivity extends Activity {
             showSetupPage();
             return true;
         }
+        // 长按屏幕 → 返回主页面
+        if ("home".equals(text)) {
+            loadHome(false);
+            return true;
+        }
         String url = normalize(text);
         if (url == null) return true;
         homeUrl = url;
