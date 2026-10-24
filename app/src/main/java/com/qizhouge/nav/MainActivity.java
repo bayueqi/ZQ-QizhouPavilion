@@ -262,9 +262,12 @@ public class MainActivity extends Activity {
             showSetupPage();
             return true;
         }
-        // 长按屏幕 → 刷新 / 返回主页面（都强制走网络，避开首屏快照）
+        // 长按屏幕 → 刷新当前页 / 返回主页面
         if ("reload".equals(text)) {
-            loadHome(true);
+            // 刷新的是当前这一页，不能回首页
+            if (web != null && !inSetup && web.getUrl() != null) {
+                web.reload();
+            }
             return true;
         }
         if ("home".equals(text)) {
