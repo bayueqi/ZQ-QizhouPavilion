@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -11,21 +12,19 @@ namespace QizhouPavilion
 {
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "build 8";
+        private const string BuildTag = "build 9";
 
         private readonly WebView2 web = new WebView2();
         private readonly string startUrl;
-        private string menuJs;
         private bool coreReady;
         private bool inSetup;
-        private bool menuReady;
 
         public MainForm(string url)
         {
             startUrl = url;
             Text = "琪舟阁  v1.0.1 " + BuildTag;
-            // 不能再叠加 WinForms 的自动缩放：会和 app.manifest / app.config 的 DPI 设置打架，
-            // 导致 WebView2 的 bounds 与实际客户区不一致，鼠标点击整体偏移。
+            // 不要叠加 WinForms 的自动缩放：DPI 由 manifest / app.config 统一声明为 SystemAware，
+            // 这里再缩放一次会让 WebView2 的 bounds 与客户区不一致，点击整体偏移。
             AutoScaleMode = AutoScaleMode.None;
             BackColor = ColorTranslator.FromHtml("#FDF8F3");
             StartPosition = FormStartPosition.CenterScreen;
@@ -44,7 +43,7 @@ namespace QizhouPavilion
             ClientSizeChanged += OnClientSizeChanged;
         }
 
-        /** 尺寸一变就把 WebView2 的 bounds 钉死在客户区，避免残留旧尺寸导致点击命中错位。 */
+        /** 尺寸一变就把 WebView2 的 bounds 钉死在客户区，避免命中区域还停在旧尺寸。 */
         private void OnClientSizeChanged(object sender, EventArgs e)
         {
             if (web == null) return;
@@ -95,21 +94,8 @@ namespace QizhouPavilion
             string ua = st.UserAgent;
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
 
-            menuJs = Resources.Load("menu.js");
-            if (menuJs != null)
-            {
-                try
-                {
-                    await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(menuJs);
-                }
-                catch
-                {
-                }
-            }
-
             web.CoreWebView2.WebMessageReceived += OnWebMessage;
             web.CoreWebView2.ContextMenuRequested += OnContextMenu;
-            web.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
             web.CoreWebView2.NewWindowRequested += (s, e) =>
             {
                 e.Handled = true;
@@ -124,7 +110,6 @@ namespace QizhouPavilion
         {
             if (!coreReady) return;
             inSetup = false;
-            menuReady = false;
             web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             web.CoreWebView2.Navigate(url);
         }
@@ -140,75 +125,65 @@ namespace QizhouPavilion
             web.CoreWebView2.NavigateToString(html);
         }
 
-        private async void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
-        {
-            if (inSetup || !coreReady) return;
-            if (menuJs == null) return;
-            try
-            {
-                string r = await web.CoreWebView2.ExecuteScriptAsync(
-                    menuJs + ";typeof window.__zqMenu;");
-                menuReady = r != null && r.IndexOf("object", StringComparison.Ordinal) >= 0;
-            }
-            catch
-            {
-                menuReady = false;
-            }
-        }
-
         /**
-         * 右键：优先用页面里的自绘菜单；脚本没装上就退回系统菜单，保证"点了有反应"。
+         * 右键菜单用 WinForms 自绘，不依赖往网页里注入脚本 —— 注入这种方式在某些页面上会失败，
+         * 失败时表现为"点了右键什么都没发生"。
          */
-        private async void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
+        private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
         {
             if (!coreReady || inSetup) return;
             e.Handled = true;
-            Point p = e.Location;
-
-            if (menuJs == null)
-            {
-                ShowFallbackMenu(p);
-                return;
-            }
-
-            string js = "(function(){try{" + menuJs +
-                        ";if(!window.__zqMenu){return 'nomenu'}" +
-                        "window.__zqMenu.show(" + p.X + "," + p.Y + ");return 'ok'" +
-                        "}catch(err){return 'err'}})()";
-            try
-            {
-                string r = await web.CoreWebView2.ExecuteScriptAsync(js);
-                if (r == null || r.IndexOf("ok", StringComparison.Ordinal) < 0)
-                {
-                    ShowFallbackMenu(p);
-                }
-                else
-                {
-                    menuReady = true;
-                }
-            }
-            catch
-            {
-                ShowFallbackMenu(p);
-            }
+            ShowAppMenu(e.Location);
         }
 
-        /** 兜底菜单：自绘脚本没跑起来时才用，至少功能不缺。 */
-        private void ShowFallbackMenu(Point p)
+        private void ShowAppMenu(Point p)
         {
             var menu = new ContextMenuStrip();
-            menu.Items.Add("更换导航站域名", null, delegate { ShowSetupPage(Config.Load()); });
-            menu.Items.Add("后退", null, delegate
+            menu.Renderer = new RoundMenuRenderer();
+            menu.ShowImageMargin = false;
+            menu.ShowCheckMargin = false;
+            menu.BackColor = Color.White;
+            menu.Font = new Font("Microsoft YaHei UI", 9.5F);
+            menu.Padding = new Padding(0, 6, 0, 6);
+            menu.DropShadowEnabled = true;
+            menu.AutoClose = true;
+
+            AddItem(menu, "更换导航站域名", delegate { ShowSetupPage(Config.Load()); });
+            AddItem(menu, "后退", delegate
             {
                 if (web.CoreWebView2 != null && web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
             });
-            menu.Items.Add("刷新", null, delegate
+            AddItem(menu, "刷新", delegate
             {
                 if (web.CoreWebView2 != null) web.CoreWebView2.Reload();
             });
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("退出琪舟阁", null, delegate { Close(); });
+            AddItem(menu, "退出琪舟阁", delegate { Close(); });
+
+            menu.Opened += delegate
+            {
+                try
+                {
+                    using (GraphicsPath path = RoundMenuRenderer.RoundedPath(
+                        new Rectangle(0, 0, menu.Width, menu.Height), 10))
+                    {
+                        menu.Region = new Region(path);
+                    }
+                }
+                catch
+                {
+                }
+            };
+
             menu.Show(web, p);
+        }
+
+        private static void AddItem(ContextMenuStrip menu, string text, EventHandler onClick)
+        {
+            var item = new ToolStripMenuItem(text);
+            item.Padding = new Padding(14, 5, 14, 5);
+            item.Click += onClick;
+            menu.Items.Add(item);
         }
 
         private void OnWebMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -217,12 +192,6 @@ namespace QizhouPavilion
             try { text = e.TryGetWebMessageAsString(); }
             catch { return; }
             if (string.IsNullOrWhiteSpace(text)) return;
-
-            if (text.StartsWith("menu:", StringComparison.Ordinal))
-            {
-                DoMenuAction(text.Substring(5));
-                return;
-            }
 
             if (text == "cancel")
             {
@@ -236,26 +205,6 @@ namespace QizhouPavilion
 
             Config.Save(url);
             NavigateTo(url);
-        }
-
-        private void DoMenuAction(string action)
-        {
-            if (action == "domain")
-            {
-                ShowSetupPage(Config.Load());
-            }
-            else if (action == "back")
-            {
-                if (web.CoreWebView2.CanGoBack) web.CoreWebView2.GoBack();
-            }
-            else if (action == "reload")
-            {
-                web.CoreWebView2.Reload();
-            }
-            else if (action == "quit")
-            {
-                Close();
-            }
         }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
@@ -299,7 +248,6 @@ namespace QizhouPavilion
             sb.AppendLine("Screen = " + b.Width + " x " + b.Height +
                           "  work = " + w.Width + " x " + w.Height);
             sb.AppendLine("AutoScaleMode = " + AutoScaleMode);
-            sb.AppendLine("menuReady = " + menuReady);
             MessageBox.Show(sb.ToString(), "诊断信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
@@ -319,6 +267,75 @@ namespace QizhouPavilion
             MessageBox.Show("WebView2 初始化失败：\n" + ex.Message + extra,
                 "琪舟阁", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Close();
+        }
+    }
+
+    /** 自绘右键菜单：白底圆角、悬停高亮，跟 App 里的 HTML 菜单观感接近。 */
+    internal sealed class RoundMenuRenderer : ToolStripProfessionalRenderer
+    {
+        public static GraphicsPath RoundedPath(Rectangle r, int radius)
+        {
+            var path = new GraphicsPath();
+            int d = radius * 2;
+            if (d > r.Width) d = r.Width;
+            if (d > r.Height) d = r.Height;
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (GraphicsPath path = RoundedPath(new Rectangle(Point.Empty, e.ToolStrip.Size), 10))
+            using (var brush = new SolidBrush(Color.White))
+            {
+                e.Graphics.FillPath(brush, path);
+            }
+        }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (GraphicsPath path = RoundedPath(
+                new Rectangle(0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1), 10))
+            using (var pen = new Pen(Color.FromArgb(30, 16, 24, 40)))
+            {
+                e.Graphics.DrawPath(pen, path);
+            }
+        }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (!e.Item.Selected) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var r = new Rectangle(4, 1, e.Item.Width - 8, e.Item.Height - 2);
+            using (GraphicsPath path = RoundedPath(r, 7))
+            using (var brush = new SolidBrush(Color.FromArgb(26, 48, 85, 128)))
+            {
+                e.Graphics.FillPath(brush, path);
+            }
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = e.Item.Selected
+                ? ColorTranslator.FromHtml("#254267")
+                : ColorTranslator.FromHtml("#1F2937");
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+        {
+            Rectangle r = e.Item.Bounds;
+            using (var pen = new Pen(Color.FromArgb(24, 16, 24, 40)))
+            {
+                e.Graphics.DrawLine(pen, r.Left + 12, r.Top + r.Height / 2,
+                    r.Right - 12, r.Top + r.Height / 2);
+            }
         }
     }
 
