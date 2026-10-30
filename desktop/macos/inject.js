@@ -55,6 +55,14 @@
     applyState();
   };
 
+  /* 长按的同时内核也会起文字选择，把选择收掉，免得留下一排复制/全选 */
+  function clearSelection() {
+    try {
+      var sel = window.getSelection && window.getSelection();
+      if (sel && sel.removeAllRanges) sel.removeAllRanges();
+    } catch (e) { }
+  }
+
   function showHomeSheet() {
     // 已经开着就别再叠一层
     if (sheetOpen) return;
@@ -86,6 +94,8 @@
 
     shadow.innerHTML = html.join('');
     document.documentElement.appendChild(host);
+    clearSelection();
+    setTimeout(clearSelection, 120);
 
     sheetNodes = {
       back: shadow.querySelector('[data-a="back"]'),

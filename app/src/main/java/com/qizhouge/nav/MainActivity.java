@@ -1,6 +1,7 @@
 package com.qizhouge.nav;
 
 import android.annotation.SuppressLint;
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -11,6 +12,10 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.WebChromeClient;
@@ -52,6 +57,9 @@ public class MainActivity extends Activity {
     /** 长按菜单切换的全屏（隐藏状态栏/导航栏），与网页视频全屏是两回事 */
     private boolean appFullscreen;
     private volatile boolean bypassCache;
+    /** 主页面加载失败，此时挡住内核自带的报错页，显示 App 自己的提示 */
+    private boolean loadFailed;
+    private String failedUrl;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -73,7 +81,7 @@ public class MainActivity extends Activity {
         findViewById(R.id.retryBtn).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                loadHome(true);
+                retryFailed();
             }
         });
         findViewById(R.id.changeBtn).setOnClickListener(new View.OnClickListener() {
@@ -157,6 +165,8 @@ public class MainActivity extends Activity {
         }
         inSetup = false;
         pageShown = false;
+        loadFailed = false;
+        failedUrl = null;
         bypassCache = fresh;
         errorBox.setVisibility(View.GONE);
         loadingBox.setVisibility(View.VISIBLE);
@@ -164,6 +174,24 @@ public class MainActivity extends Activity {
         web.setVisibility(View.INVISIBLE);
         web.loadUrl(homeUrl);
         if (fresh) cache.refreshAsync(homeUrl);
+    }
+
+    /** 出错页的「重试」：重试刚才失败的那个地址，不是一律回首页。 */
+    private void retryFailed() {
+        String url = failedUrl != null ? failedUrl : homeUrl;
+        if (url == null) {
+            showSetupPage();
+            return;
+        }
+        loadFailed = false;
+        failedUrl = null;
+        pageShown = false;
+        bypassCache = sameHomeUrl(url);
+        errorBox.setVisibility(View.GONE);
+        loadingBox.setVisibility(View.VISIBLE);
+        splash.setVisibility(View.VISIBLE);
+        web.setVisibility(View.INVISIBLE);
+        web.loadUrl(url);
     }
 
     /**
@@ -177,6 +205,8 @@ public class MainActivity extends Activity {
         }
         inSetup = true;
         pageShown = false;
+        loadFailed = false;
+        failedUrl = null;
         bypassCache = false;
         errorBox.setVisibility(View.GONE);
         loadingBox.setVisibility(View.GONE);
@@ -186,14 +216,17 @@ public class MainActivity extends Activity {
     }
 
     private void revealPage() {
-        if (web == null || pageShown) return;
+        // 加载失败时内核仍会回调 onPageFinished，别让它把自带的报错页翻出来
+        if (web == null || pageShown || loadFailed) return;
         pageShown = true;
         web.setVisibility(View.VISIBLE);
         splash.setVisibility(View.GONE);
     }
 
-    private void showLoadError() {
-        if (pageShown) return;
+    private void showLoadError(String url) {
+        loadFailed = true;
+        failedUrl = url;
+        pageShown = false;
         loadingBox.setVisibility(View.GONE);
         errorBox.setVisibility(View.VISIBLE);
         splash.setVisibility(View.VISIBLE);
@@ -290,7 +323,11 @@ public class MainActivity extends Activity {
         String url = normalize(text);
         if (url == null) return true;
         homeUrl = url;
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_HOME, url).apply();
+        // 同步落盘：随后进程被划掉也不会退回上一个域名
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_HOME, url).commit();
+        // 旧站点的 HTML 快照不能留给新域名用
+        cache.clear();
+        if (web != null) web.clearHistory();
         warmUpDns(url);
         loadHome(true);
         return true;
@@ -322,7 +359,7 @@ public class MainActivity extends Activity {
                 bypassCache = false;
                 return null;
             }
-            byte[] data = cache.read();
+            byte[] data = cache.read(homeUrl);
             if (data == null) return null;
             cache.refreshAsync(homeUrl);
             try {
@@ -341,7 +378,7 @@ public class MainActivity extends Activity {
         @Override
         public void onPageFinished(WebView view, String url) {
             revealPage();
-            if (homeUrl != null && !inSetup) {
+            if (homeUrl != null && !inSetup && !loadFailed) {
                 cache.refreshAsync(homeUrl);
                 injectScripts();
             }
@@ -356,7 +393,8 @@ public class MainActivity extends Activity {
         public void onReceivedError(WebView view, WebResourceRequest request,
                                     WebResourceError error) {
             if (request != null && request.isForMainFrame() && !inSetup) {
-                showLoadError();
+                Uri u = request.getUrl();
+                showLoadError(u == null ? null : u.toString());
             }
         }
     }
@@ -411,22 +449,67 @@ public class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     private void enterImmersive() {
         try {
-            getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-        } catch (Exception ignored) {
+            Window win = getWindow();
+            // 刘海屏：不声明画进凹口，全屏时状态栏那一条会被系统涂成黑边
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                WindowManager.LayoutParams lp = win.getAttributes();
+                lp.layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                win.setAttributes(lp);
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Bars.hide(win);
+            } else {
+                win.getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+            }
+        } catch (Throwable ignored) {
         }
     }
 
     @SuppressWarnings("deprecation")
     private void exitImmersive() {
         try {
-            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
-        } catch (Exception ignored) {
+            Window win = getWindow();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                WindowManager.LayoutParams lp = win.getAttributes();
+                lp.layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+                win.setAttributes(lp);
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Bars.show(win);
+            } else {
+                win.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Android 11 起系统栏交给 WindowInsetsController；单独成类，旧系统不会碰到这些新 API。 */
+    private static final class Bars {
+
+        @TargetApi(Build.VERSION_CODES.R)
+        static void hide(Window win) {
+            win.setDecorFitsSystemWindows(false);
+            WindowInsetsController c = win.getInsetsController();
+            if (c == null) return;
+            c.hide(WindowInsets.Type.systemBars());
+            c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        }
+
+        @TargetApi(Build.VERSION_CODES.R)
+        static void show(Window win) {
+            win.setDecorFitsSystemWindows(true);
+            WindowInsetsController c = win.getInsetsController();
+            if (c == null) return;
+            c.show(WindowInsets.Type.systemBars());
+            c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_DEFAULT);
         }
     }
 
@@ -447,6 +530,27 @@ public class MainActivity extends Activity {
         // 视频全屏时，返回键先退出全屏
         if (fullscreenView != null) {
             exitFullscreen();
+            return;
+        }
+        // 长按菜单切的全屏，返回键同样能退出，不然只剩菜单一条路
+        if (appFullscreen) {
+            appFullscreen = false;
+            exitImmersive();
+            return;
+        }
+        // 报错页：先退回上一个能用的页面
+        if (loadFailed) {
+            loadFailed = false;
+            failedUrl = null;
+            errorBox.setVisibility(View.GONE);
+            loadingBox.setVisibility(View.GONE);
+            splash.setVisibility(View.GONE);
+            if (web != null && web.canGoBack()) {
+                web.setVisibility(View.VISIBLE);
+                web.goBack();
+            } else {
+                loadHome(false);
+            }
             return;
         }
         if (inSetup) {
