@@ -77,6 +77,18 @@
     } catch (e) { }
   }
 
+  /* 可视区可能带缩放、也可能比布局视口小，按 visualViewport 算中心，别指望 flex 居中 */
+  function centerCard(card) {
+    if (!card) return;
+    var vv = window.visualViewport;
+    var vw = vv ? vv.width : window.innerWidth;
+    var vh = vv ? vv.height : window.innerHeight;
+    var ox = vv ? vv.offsetLeft : 0;
+    var oy = vv ? vv.offsetTop : 0;
+    card.style.left = Math.round(ox + (vw - card.offsetWidth) / 2) + 'px';
+    card.style.top = Math.round(oy + (vh - card.offsetHeight) / 2) + 'px';
+  }
+
   function showHomeSheet() {
     // 已经开着就别再叠一层
     if (sheetOpen) return;
@@ -91,7 +103,8 @@
       '.mask{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(16,24,40,.28);',
       'display:flex;align-items:center;justify-content:center;animation:zqfade .14s ease-out}',
       '@keyframes zqfade{from{opacity:0}to{opacity:1}}',
-      '.card{background:#fff;border-radius:18px;padding:8px;box-shadow:0 20px 48px rgba(16,24,40,.3);',
+      '.card{position:absolute;left:0;top:0;transform-origin:50% 50%;',
+      'background:#fff;border-radius:18px;padding:8px;box-shadow:0 20px 48px rgba(16,24,40,.3);',
       'font:16px/1.4 "PingFang SC","Microsoft YaHei UI",system-ui,sans-serif;animation:zqpop .16s ease-out}',
       '@keyframes zqpop{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}',
       '.it{padding:15px 34px;border-radius:12px;color:#1F2937;white-space:nowrap;text-align:center}',
@@ -109,6 +122,7 @@
 
     shadow.innerHTML = html.join('');
     document.documentElement.appendChild(host);
+    centerCard(shadow.getElementById('card'));
     clearSelection();
     setTimeout(clearSelection, 120);
 
