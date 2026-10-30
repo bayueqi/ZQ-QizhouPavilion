@@ -47,13 +47,22 @@ func promptURL() -> URL? {
     return normalize(field.stringValue)
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSWindowDelegate {
 
     var window: NSWindow!
     var web: WKWebView!
+    var errorHtml: String?
+    var lastURL: URL?
+    var showingError = false
+    var fullscreenItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
+
+        if let url = Bundle.main.url(forResource: "error", withExtension: "html"),
+           let html = try? String(contentsOf: url, encoding: .utf8) {
+            errorHtml = html
+        }
 
         let frame = NSRect(x: 0, y: 0, width: 1100, height: 760)
         window = NSWindow(contentRect: frame,
@@ -63,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         window.title = appTitle
         window.center()
         window.setFrameAutosaveName("QizhouPavilionMain")
+        window.delegate = self
 
         let cfg = WKWebViewConfiguration()
         // 往页面里插「更改域名」入口（不改网页源码）
@@ -96,7 +106,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             NSApp.terminate(nil)
             return
         }
+        openURL(url)
+    }
+
+    /// 统一走这里，记住最后一次要打开的地址，打不开时「重试」用它。
+    func openURL(_ url: URL) {
+        lastURL = url
+        showingError = false
         web.load(URLRequest(url: url))
+    }
+
+    /// 打不开时换成 App 自己的提示页，不留 WebKit 那一片空白
+    func showErrorPage() {
+        guard !showingError, let html = errorHtml else { return }
+        showingError = true
+        web.loadHTMLString(html, baseURL: URL(string: "https://qizhouge.app/"))
+    }
+
+    /// 取消（比如菜单回传的 zqnavgo:）不算加载失败
+    func isCancelled(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+                 withError error: Error) {
+        if isCancelled(error) { return }
+        showErrorPage()
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if isCancelled(error) { return }
+        showErrorPage()
+    }
+
+    /// 窗口进出全屏时同步菜单文案
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        fullscreenItem?.title = "退出全屏"
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        fullscreenItem?.title = "全屏"
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -116,7 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             switch text {
             case "change": changeDomain(nil)
             case "home": goHome(nil)
-            case "reload": web?.reload()
+            case "reload": reloadPage(nil)
+            case "retry": retryLast(nil)
             case "back": goBack(nil)
             case "forward": goForward(nil)
             case "fullscreen": toggleFullscreen(nil)
@@ -128,7 +179,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
 
     @objc func reloadPage(_ sender: Any?) {
+        if showingError {
+            retryLast(sender)
+            return
+        }
         web?.reload()
+    }
+
+    @objc func retryLast(_ sender: Any?) {
+        guard let url = lastURL else { return }
+        openURL(url)
     }
 
     @objc func goBack(_ sender: Any?) {
@@ -146,13 +206,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     /// 回导航站首页
     @objc func goHome(_ sender: Any?) {
         guard let home = loadSavedURL(), let url = normalize(home) else { return }
-        web?.load(URLRequest(url: url))
+        openURL(url)
     }
 
     @objc func changeDomain(_ sender: Any?) {
         guard let url = promptURL() else { return }
         saveURL(url.absoluteString)
-        web.load(URLRequest(url: url))
+        openURL(url)
     }
 
     private func buildMenu() {
@@ -177,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         for (title, action) in entries {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = self
+            if action == #selector(toggleFullscreen(_:)) { fullscreenItem = item }
             appMenu.addItem(item)
         }
 

@@ -20,6 +20,9 @@ namespace QizhouPavilion
         private CoreWebView2 core;
         private XButtonFilter xFilter;
         private string injectJs;
+        private string errorHtml;
+        private string lastUrl;
+        private bool showingError;
         private bool coreReady;
         private bool inSetup;
         private bool fullscreen;
@@ -186,8 +189,10 @@ namespace QizhouPavilion
                 catch
                 {
                 }
-                core.NavigationCompleted += OnNavigationCompleted;
             }
+
+            errorHtml = Resources.Load("error.html");
+            core.NavigationCompleted += OnNavigationCompleted;
 
             if (url != null) NavigateTo(url);
             else ShowSetupPage(null);
@@ -196,7 +201,15 @@ namespace QizhouPavilion
         /** document-created 阶段注入那次可能 DOM 还没解析完，加载完成后再补一次（脚本自身幂等）。 */
         private async void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            if (inSetup || injectJs == null || !coreReady) return;
+            if (!coreReady || inSetup) return;
+            // 错误页自己的加载结果，不再往下走
+            if (showingError) return;
+            if (!e.IsSuccess)
+            {
+                ShowErrorPage();
+                return;
+            }
+            if (injectJs == null) return;
             try
             {
                 await core.ExecuteScriptAsync(injectJs);
@@ -209,8 +222,28 @@ namespace QizhouPavilion
         private void NavigateTo(string url)
         {
             if (!coreReady) return;
+            showingError = false;
             inSetup = false;
+            lastUrl = url;
             core.Navigate(url);
+        }
+
+        /** 打不开时换成 App 自己的提示页，不用 WebView2 自带的那张报错页。 */
+        private void ShowErrorPage()
+        {
+            if (errorHtml == null) return;
+            showingError = true;
+            try { core.NavigateToString(errorHtml); } catch { }
+        }
+
+        private void RetryLast()
+        {
+            if (string.IsNullOrEmpty(lastUrl))
+            {
+                GoHome();
+                return;
+            }
+            NavigateTo(lastUrl);
         }
 
         private void ShowSetupPage(string current)
@@ -218,6 +251,7 @@ namespace QizhouPavilion
             if (!coreReady) return;
             string html = SetupPage.Build(current);
             if (html == null) return;
+            showingError = false;
             inSetup = true;
             core.NavigateToString(html);
         }
@@ -234,6 +268,13 @@ namespace QizhouPavilion
             {
                 string current = Config.Load();
                 if (current != null) NavigateTo(current);
+                return;
+            }
+
+            // 打不开的提示页上那两颗按钮
+            if (text == "retry")
+            {
+                RetryLast();
                 return;
             }
 
@@ -269,7 +310,8 @@ namespace QizhouPavilion
 
             if (text == "reload")
             {
-                if (core != null) core.Reload();
+                if (showingError) RetryLast();
+                else if (core != null) core.Reload();
                 return;
             }
 
@@ -305,7 +347,11 @@ namespace QizhouPavilion
                     "刷新", null, CoreWebView2ContextMenuItemKind.Command);
                 reload.CustomItemSelected += delegate
                 {
-                    BeginInvoke((Action)(() => { if (core != null) core.Reload(); }));
+                    BeginInvoke((Action)(() =>
+                    {
+                        if (showingError) RetryLast();
+                        else if (core != null) core.Reload();
+                    }));
                 };
                 items.Add(reload);
 

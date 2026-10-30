@@ -34,6 +34,8 @@
   <ItemGroup>
     <EmbeddedResource Include="setup.html" />
     <None Remove="setup.html" />
+    <EmbeddedResource Include="error.html" />
+    <None Remove="error.html" />
     <EmbeddedResource Include="inject.js" />
     <None Remove="inject.js" />
   </ItemGroup>

@@ -16,6 +16,20 @@
     ['home', '返回主页面']
   ];
 
+  // 全屏状态由外壳告知：菜单里那一项跟着显示「全屏」或「退出全屏」
+  var fsOn = false;
+  window.__zqFsOn = false;
+
+  function fsLabel() {
+    return fsOn ? '退出全屏' : '全屏';
+  }
+
+  window.__zqFullscreen = function (on) {
+    fsOn = !!on;
+    window.__zqFsOn = fsOn;
+    if (sheetNodes && sheetNodes.full) sheetNodes.full.textContent = fsLabel();
+  };
+
   function send(action) {
     if (window.chrome && window.chrome.webview) {
       window.chrome.webview.postMessage(action);
@@ -88,7 +102,8 @@
       '<div class="mask" id="mask"><div class="card" id="card">'
     ];
     for (var i = 0; i < ITEMS.length; i++) {
-      html.push('<div class="it" data-a="' + ITEMS[i][0] + '">' + ITEMS[i][1] + '</div>');
+      var label = ITEMS[i][0] === 'fullscreen' ? fsLabel() : ITEMS[i][1];
+      html.push('<div class="it" data-a="' + ITEMS[i][0] + '">' + label + '</div>');
     }
     html.push('</div></div>');
 
@@ -98,6 +113,7 @@
     setTimeout(clearSelection, 120);
 
     sheetNodes = {
+      full: shadow.querySelector('[data-a="fullscreen"]'),
       back: shadow.querySelector('[data-a="back"]'),
       forward: shadow.querySelector('[data-a="forward"]')
     };

@@ -521,6 +521,20 @@ public class MainActivity extends Activity {
         } else {
             exitImmersive();
         }
+        syncFullscreen();
+    }
+
+    /** 把全屏状态告诉菜单，那一项据此显示「全屏」或「退出全屏」。 */
+    private void syncFullscreen() {
+        if (web == null) return;
+        try {
+            web.evaluateJavascript(fullscreenCall(), null);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String fullscreenCall() {
+        return "window.__zqFullscreen&&window.__zqFullscreen(" + appFullscreen + ")";
     }
 
     // ---------- 返回键 ----------
@@ -536,6 +550,7 @@ public class MainActivity extends Activity {
         if (appFullscreen) {
             appFullscreen = false;
             exitImmersive();
+            syncFullscreen();
             return;
         }
         // 报错页：先退回上一个能用的页面
@@ -574,8 +589,8 @@ public class MainActivity extends Activity {
         String js = SetupPage.read(this, "inject.js");
         if (js == null) return;
         try {
-            // 接着把历史状态塞进去，保证 __zqHistory 已经存在
-            web.evaluateJavascript(js + ";" + historyCall(), null);
+            // 接着把历史状态和全屏状态塞进去，保证 __zqHistory / __zqFullscreen 已经存在
+            web.evaluateJavascript(js + ";" + historyCall() + ";" + fullscreenCall(), null);
         } catch (Exception ignored) {
         }
     }

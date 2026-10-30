@@ -12,11 +12,18 @@
 
 #include "menu_js.h"
 #include "inject_js.h"
+#include "error_html.h"
 
 #define APP_DIR "QizhouPavilion"
+/* 打不开时那张提示页的 base uri，用来认「现在亮的是一张提示页」 */
+#define ERROR_BASE "https://qizhouge.app/"
 
 static GtkWidget *main_window = NULL;
 static GtkWidget *web_view = NULL;
+static GtkWidget *fs_item = NULL;
+static char *failed_url = NULL;
+
+static void act_home(void);
 
 static char *config_path(void)
 {
@@ -135,12 +142,47 @@ static void act_fullscreen(void)
     else
         gtk_window_fullscreen(GTK_WINDOW(main_window));
     is_fullscreen = !is_fullscreen;
+
+    if (fs_item != NULL)
+        gtk_menu_item_set_label(GTK_MENU_ITEM(fs_item), is_fullscreen ? "退出全屏" : "全屏");
+
+    if (web_view != NULL) {
+        char *js = g_strdup_printf("window.__zqFullscreen&&window.__zqFullscreen(%s);",
+                                   is_fullscreen ? "true" : "false");
+        webkit_web_view_run_javascript(WEBKIT_WEB_VIEW(web_view), js, NULL, NULL, NULL);
+        g_free(js);
+    }
+}
+
+/* 当前显示的是不是那张「打不开」提示页 */
+static gboolean on_error_page(void)
+{
+    if (web_view == NULL)
+        return FALSE;
+    const char *uri = webkit_web_view_get_uri(WEBKIT_WEB_VIEW(web_view));
+    return uri != NULL && g_str_has_prefix(uri, ERROR_BASE);
+}
+
+static void act_retry(void)
+{
+    if (web_view == NULL)
+        return;
+    if (failed_url != NULL)
+        webkit_web_view_load_uri(WEBKIT_WEB_VIEW(web_view), failed_url);
+    else
+        act_home();
 }
 
 static void act_reload(void)
 {
-    if (web_view != NULL)
-        webkit_web_view_reload(WEBKIT_WEB_VIEW(web_view));
+    if (web_view == NULL)
+        return;
+    /* 提示页上「刷新」等于重试刚才那个地址，不是重载这张提示页 */
+    if (on_error_page()) {
+        act_retry();
+        return;
+    }
+    webkit_web_view_reload(WEBKIT_WEB_VIEW(web_view));
 }
 
 static void act_back(void)
@@ -190,6 +232,8 @@ static void act_dispatch(const char *action)
         return;
     if (g_strcmp0(action, "reload") == 0)
         act_reload();
+    else if (g_strcmp0(action, "retry") == 0)
+        act_retry();
     else if (g_strcmp0(action, "fullscreen") == 0)
         act_fullscreen();
     else if (g_strcmp0(action, "change") == 0)
@@ -211,6 +255,27 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent load_event, gpo
         webkit_web_view_run_javascript(view, MENU_JS, NULL, NULL, NULL);
         webkit_web_view_run_javascript(view, INJECT_JS, NULL, NULL, NULL);
     }
+}
+
+/*
+ * 打不开时换成 App 自己的提示页，不留 WebKit 那片空白。
+ * 菜单回传的 zqnavgo: 会让当前这次加载被取消，那种取消要放过去。
+ */
+static gboolean on_load_failed(WebKitWebView *view, WebKitLoadEvent load_event,
+                               const char *failing_uri, GError *error, gpointer user_data)
+{
+    (void)load_event;
+    (void)user_data;
+    if (error != NULL && error->code == WEBKIT_NETWORK_ERROR_CANCELLED)
+        return FALSE;
+    if (failing_uri != NULL && g_str_has_prefix(failing_uri, "zqnavgo:"))
+        return FALSE;
+    if (failing_uri != NULL) {
+        g_free(failed_url);
+        failed_url = g_strdup(failing_uri);
+    }
+    webkit_web_view_load_html(view, ERROR_HTML, ERROR_BASE);
+    return TRUE;
 }
 
 /* 网页侧长按菜单走 zqnavgo:<动作名>，这里拦下来交给统一的动作分发 */
@@ -301,6 +366,8 @@ static GtkWidget *make_header_bar(void)
     int i;
     for (i = 0; i < 6; i++) {
         GtkWidget *it = gtk_menu_item_new_with_label(items[i][1]);
+        if (g_strcmp0(items[i][0], "fullscreen") == 0)
+            fs_item = it;
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), it);
         g_signal_connect(it, "activate", G_CALLBACK(on_menu_action),
                          (gpointer)items[i][0]);
@@ -344,6 +411,7 @@ int main(int argc, char **argv)
     web_view = webkit_web_view_new();
     gtk_container_add(GTK_CONTAINER(main_window), web_view);
     g_signal_connect(web_view, "load-changed", G_CALLBACK(on_load_changed), NULL);
+    g_signal_connect(web_view, "load-failed", G_CALLBACK(on_load_failed), NULL);
     g_signal_connect(web_view, "context-menu", G_CALLBACK(on_context_menu), NULL);
     g_signal_connect(web_view, "decide-policy", G_CALLBACK(on_decide_policy), NULL);
 

@@ -71,6 +71,12 @@
     var mask = root.getElementById('mask');
     var menu = root.getElementById('menu');
     var items = root.querySelectorAll('.it');
+    var fsItem = root.querySelector('[data-a="fullscreen"]');
+
+    // 全屏状态由外壳告知（window.__zqFsOn），每次弹出时刷新这一项的文案
+    function syncLabels() {
+      if (fsItem) fsItem.textContent = window.__zqFsOn ? '退出全屏' : '全屏';
+    }
 
     function hide() {
       mask.className = 'mask';
@@ -128,6 +134,7 @@
     window.addEventListener('resize', hide);
 
     function place(x, y) {
+      syncLabels();
       mask.className = 'mask on';
       menu.style.left = '0px';
       menu.style.top = '0px';
