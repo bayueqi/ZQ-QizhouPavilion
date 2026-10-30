@@ -546,13 +546,6 @@ public class MainActivity extends Activity {
             exitFullscreen();
             return;
         }
-        // 长按菜单切的全屏，返回键同样能退出，不然只剩菜单一条路
-        if (appFullscreen) {
-            appFullscreen = false;
-            exitImmersive();
-            syncFullscreen();
-            return;
-        }
         // 报错页：先退回上一个能用的页面
         if (loadFailed) {
             loadFailed = false;
