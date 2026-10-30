@@ -354,7 +354,12 @@ public class MainActivity extends Activity {
                 retryFailed();
                 return;
             }
-            if (web != null && !inSetup && web.getUrl() != null) web.reload();
+            // 欢迎页没有「当前页」可重载，刷新等于重画一遍
+            if (inSetup) {
+                showSetupPage();
+                return;
+            }
+            if (web != null && web.getUrl() != null) web.reload();
             return;
         }
         if ("fullscreen".equals(action)) {
@@ -550,7 +555,13 @@ public class MainActivity extends Activity {
         @Override
         public void onPageFinished(WebView view, String url) {
             revealPage();
-            if (homeUrl != null && !inSetup && !loadFailed) {
+            if (loadFailed) return;
+            if (inSetup) {
+                // 欢迎页也挂同一套长按菜单
+                injectScripts(true);
+                return;
+            }
+            if (homeUrl != null) {
                 cache.refreshAsync(homeUrl);
                 injectScripts();
             }
@@ -740,12 +751,22 @@ public class MainActivity extends Activity {
 
     /** 注入侧边栏「更改域名」入口（脚本内部有幂等判断）。 */
     private void injectScripts() {
+        injectScripts(false);
+    }
+
+    /**
+     * @param setup 欢迎页：没有可刷新/可前进后退的内容，菜单里那几项直接置灰
+     */
+    private void injectScripts(boolean setup) {
         if (web == null) return;
         String js = SetupPage.read(this, "inject.js");
         if (js == null) return;
         try {
             // 接着把历史状态和全屏状态塞进去，保证 __zqHistory / __zqFullscreen 已经存在
-            web.evaluateJavascript(js + ";" + historyCall() + ";" + fullscreenCall(), null);
+            String hist = setup
+                    ? "window.__zqHistory&&window.__zqHistory(false,false)"
+                    : historyCall();
+            web.evaluateJavascript(js + ";" + hist + ";" + fullscreenCall(), null);
         } catch (Exception ignored) {
         }
     }

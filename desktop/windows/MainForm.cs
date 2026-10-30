@@ -14,7 +14,7 @@ namespace QizhouPavilion
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "b21";
+        private const string BuildTag = "b22";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
@@ -337,9 +337,11 @@ namespace QizhouPavilion
             base.WndProc(ref m);
         }
 
-        /** 六项菜单：网页里、转圈层上都用这一份，样式见 AppMenu。 */
+        /** 六项菜单：欢迎页、网页里、转圈层上都用这一份，样式见 AppMenu。 */
         private void ShowAppMenu(Point screenPos)
         {
+            // 欢迎页上没有刷新/前进后退可讲，这两类置灰，免得点了没反应
+            bool setup = inSetup;
             string[] labels = {
                 "刷新",
                 fullscreen ? "退出全屏" : "全屏",
@@ -351,13 +353,13 @@ namespace QizhouPavilion
             bool[] enabled = {
                 true,
                 true,
-                true,
-                core != null && core.CanGoBack,
-                core != null && core.CanGoForward,
+                !setup,
+                !setup && core != null && core.CanGoBack,
+                !setup && core != null && core.CanGoForward,
                 true
             };
             Action[] actions = {
-                delegate { RetryLast(); },
+                delegate { if (inSetup) ShowSetupPage(Config.Load()); else RetryLast(); },
                 delegate { ToggleFullscreen(); },
                 delegate { ShowSetupPage(Config.Load()); },
                 delegate { NavigateBack(); },
@@ -490,7 +492,8 @@ namespace QizhouPavilion
 
             if (text == "reload")
             {
-                if (showingError) RetryLast();
+                if (inSetup) ShowSetupPage(Config.Load());
+                else if (showingError) RetryLast();
                 else if (core != null) core.Reload();
                 return;
             }
@@ -515,10 +518,10 @@ namespace QizhouPavilion
          */
         private void OnContextMenu(object sender, CoreWebView2ContextMenuRequestedEventArgs e)
         {
-            if (!coreReady || inSetup) return;
+            if (!coreReady) return;
             try
             {
-                // 交给自绘的 AppMenu 画，和转圈层上那份菜单是同一套样式
+                // 交给自绘的 AppMenu 画：欢迎页、网页里、转圈层上都是同一套样式
                 e.Handled = true;
                 ShowAppMenu(Cursor.Position);
             }
