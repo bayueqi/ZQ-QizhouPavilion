@@ -6,12 +6,17 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -26,6 +31,8 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -60,6 +67,8 @@ public class MainActivity extends Activity {
     /** 主页面加载失败，此时挡住内核自带的报错页，显示 App 自己的提示 */
     private boolean loadFailed;
     private String failedUrl;
+    /** 盖住网页时（加载中、打不开）弹出的原生菜单 */
+    private FrameLayout menuHost;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -90,6 +99,13 @@ public class MainActivity extends Activity {
                 showSetupPage();
             }
         });
+
+        // 加载中、打不开时整个屏幕被这两层盖住，网页里的长按菜单点不到，长按改走原生菜单
+        bindLongPress(splash);
+        bindLongPress(errorBox);
+        bindLongPress(loadingBox);
+        bindLongPress(findViewById(R.id.retryBtn));
+        bindLongPress(findViewById(R.id.changeBtn));
 
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         String saved = sp.getString(KEY_HOME, null);
@@ -293,31 +309,9 @@ public class MainActivity extends Activity {
             return true;
         }
         // 长按屏幕弹出的功能菜单（与电脑端菜单同六项）
-        if ("change".equals(text)) {
-            showSetupPage();
-            return true;
-        }
-        if ("reload".equals(text)) {
-            // 刷新的是当前这一页，不能回首页
-            if (web != null && !inSetup && web.getUrl() != null) {
-                web.reload();
-            }
-            return true;
-        }
-        if ("fullscreen".equals(text)) {
-            toggleAppFullscreen();
-            return true;
-        }
-        if ("back".equals(text)) {
-            if (web != null && web.canGoBack()) web.goBack();
-            return true;
-        }
-        if ("forward".equals(text)) {
-            if (web != null && web.canGoForward()) web.goForward();
-            return true;
-        }
-        if ("home".equals(text)) {
-            loadHome(true);
+        if ("reload".equals(text) || "fullscreen".equals(text) || "change".equals(text)
+                || "back".equals(text) || "forward".equals(text) || "home".equals(text)) {
+            performAction(text);
             return true;
         }
         String url = normalize(text);
@@ -331,6 +325,154 @@ public class MainActivity extends Activity {
         warmUpDns(url);
         loadHome(true);
         return true;
+    }
+
+    /** 菜单里的六项，网页里的长按菜单和盖住网页时的原生菜单走同一套。 */
+    private void performAction(String action) {
+        if ("change".equals(action)) {
+            showSetupPage();
+            return;
+        }
+        if ("reload".equals(action)) {
+            // 停在「打不开」那一页时，刷新等于重试刚才失败的地址
+            if (loadFailed) {
+                retryFailed();
+                return;
+            }
+            if (web != null && !inSetup && web.getUrl() != null) web.reload();
+            return;
+        }
+        if ("fullscreen".equals(action)) {
+            toggleAppFullscreen();
+            return;
+        }
+        if ("back".equals(action)) {
+            if (web != null && !inSetup && web.canGoBack()) web.goBack();
+            return;
+        }
+        if ("forward".equals(action)) {
+            if (web != null && !inSetup && web.canGoForward()) web.goForward();
+            return;
+        }
+        if ("home".equals(action)) {
+            loadHome(true);
+        }
+    }
+
+    // ---------- 盖住网页时的原生长按菜单 ----------
+
+    private void bindLongPress(View v) {
+        if (v == null) return;
+        v.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View view) {
+                showNativeMenu();
+                return true;
+            }
+        });
+    }
+
+    /**
+     * 与网页里注入的那套菜单同样的外观与六项，只是画在原生层，
+     * 这样加载中、打不开这两种盖住网页的状态也能长按。
+     */
+    private void showNativeMenu() {
+        if (menuHost != null || isFinishing()) return;
+        final float d = getResources().getDisplayMetrics().density;
+        int pad = Math.round(8 * d);
+
+        FrameLayout host = new FrameLayout(this);
+        host.setBackgroundColor(0x48101828);
+        host.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                hideNativeMenu();
+            }
+        });
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.WHITE);
+        bg.setCornerRadius(18 * d);
+        card.setBackground(bg);
+        card.setPadding(pad, pad, pad, pad);
+        // 卡片自己也吃掉点击，免得点在空白处被当成点遮罩
+        card.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+            }
+        });
+
+        String[][] items = {
+                {"reload", "刷新"},
+                {"fullscreen", appFullscreen ? "退出全屏" : "全屏"},
+                {"change", "更换域名"},
+                {"back", "后退上一页"},
+                {"forward", "前进下一页"},
+                {"home", "返回主页面"}
+        };
+        for (int i = 0; i < items.length; i++) {
+            final String action = items[i][0];
+            boolean off = ("back".equals(action) && !(web != null && !inSetup && web.canGoBack()))
+                    || ("forward".equals(action) && !(web != null && !inSetup && web.canGoForward()));
+
+            TextView tv = new TextView(this);
+            tv.setText(items[i][1]);
+            tv.setTextSize(16);
+            tv.setTextColor(off ? 0xFFC2C7D0 : 0xFF1F2937);
+            tv.setGravity(Gravity.CENTER);
+            tv.setPadding(Math.round(34 * d), Math.round(15 * d),
+                    Math.round(34 * d), Math.round(15 * d));
+            tv.setBackground(itemBg(d));
+            if (off) {
+                tv.setEnabled(false);
+            } else {
+                tv.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        hideNativeMenu();
+                        performAction(action);
+                    }
+                });
+            }
+            card.addView(tv);
+        }
+
+        host.addView(card, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER));
+
+        ViewGroup root = (ViewGroup) findViewById(R.id.root);
+        if (root == null) return;
+        root.addView(host, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        menuHost = host;
+    }
+
+    private StateListDrawable itemBg(float d) {
+        GradientDrawable normal = new GradientDrawable();
+        normal.setColor(Color.TRANSPARENT);
+        normal.setCornerRadius(12 * d);
+        GradientDrawable pressed = new GradientDrawable();
+        pressed.setColor(0x1A305580);
+        pressed.setCornerRadius(12 * d);
+        StateListDrawable s = new StateListDrawable();
+        s.addState(new int[]{android.R.attr.state_pressed}, pressed);
+        s.addState(new int[]{}, normal);
+        return s;
+    }
+
+    private void hideNativeMenu() {
+        if (menuHost == null) return;
+        try {
+            ViewGroup parent = (ViewGroup) menuHost.getParent();
+            if (parent != null) parent.removeView(menuHost);
+        } catch (Exception ignored) {
+        }
+        menuHost = null;
     }
 
     // ---------- 内部类 ----------
@@ -370,9 +512,19 @@ public class MainActivity extends Activity {
             }
         }
 
+        /**
+         * 首帧可见就掀开，但失败时内核也会 commit 一张自带的报错页，
+         * 所以压一小会儿再判断：那期间 onReceivedError 已经把 loadFailed 立起来了。
+         */
         @Override
-        public void onPageCommitVisible(WebView view, String url) {
-            revealPage();
+        public void onPageCommitVisible(final WebView view, String url) {
+            if (view == null) return;
+            view.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (!loadFailed) revealPage();
+                }
+            }, 150);
         }
 
         @Override
@@ -400,11 +552,6 @@ public class MainActivity extends Activity {
     }
 
     private class AppChrome extends WebChromeClient {
-        @Override
-        public void onProgressChanged(WebView view, int newProgress) {
-            if (newProgress >= 100) revealPage();
-        }
-
         /** 网页视频点全屏时，内核会把播放 Surface 交给我们，塞进全屏容器。 */
         @Override
         public void onShowCustomView(View view, CustomViewCallback callback) {
@@ -541,6 +688,11 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        // 原生长按菜单开着，返回键先关菜单
+        if (menuHost != null) {
+            hideNativeMenu();
+            return;
+        }
         // 视频全屏时，返回键先退出全屏
         if (fullscreenView != null) {
             exitFullscreen();

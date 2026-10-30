@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -13,7 +14,7 @@ namespace QizhouPavilion
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "b18";
+        private const string BuildTag = "b19";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
@@ -26,6 +27,12 @@ namespace QizhouPavilion
         private bool coreReady;
         private bool inSetup;
         private bool fullscreen;
+        private bool loading;
+        private float spinAngle;
+        private int loadingSince;
+        private Timer spinTimer;
+        private Timer hideTimer;
+        private Timer watchdog;
         private FormBorderStyle prevBorder = FormBorderStyle.Sizable;
         private FormWindowState prevState = FormWindowState.Normal;
 
@@ -34,6 +41,7 @@ namespace QizhouPavilion
             startUrl = url;
             AutoScaleMode = AutoScaleMode.None;
             BackColor = ColorTranslator.FromHtml("#FDF8F3");
+            DoubleBuffered = true;
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(480, 360);
             Rectangle wa = Screen.PrimaryScreen.WorkingArea;
@@ -202,13 +210,18 @@ namespace QizhouPavilion
         private async void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
             if (!coreReady || inSetup) return;
-            // 错误页自己的加载结果，不再往下走
-            if (showingError) return;
+            // 错误页自己的加载结果：加载完了才把画面放出来，中间不会闪过内核那张报错页
+            if (showingError)
+            {
+                SetLoading(false);
+                return;
+            }
             if (!e.IsSuccess)
             {
                 ShowErrorPage();
                 return;
             }
+            SetLoading(false);
             if (injectJs == null) return;
             try
             {
@@ -219,21 +232,130 @@ namespace QizhouPavilion
             }
         }
 
+        /**
+         * 导航期间把 WebView 藏起来、自己在窗口上转圈：
+         * 内核自带的那张报错页没机会露脸，点「重试」也有加载反馈。
+         * 秒失败的情况（域名解析不出来）也把圈留够 450ms，否则一闪而过，看着像没反应。
+         */
+        private void SetLoading(bool on)
+        {
+            if (on)
+            {
+                if (hideTimer != null) hideTimer.Stop();
+                loadingSince = Environment.TickCount;
+                ApplyLoading(true);
+                return;
+            }
+            int shown = unchecked(Environment.TickCount - loadingSince);
+            int wait = 450 - shown;
+            if (loading && shown >= 0 && wait > 0)
+            {
+                if (hideTimer == null)
+                {
+                    hideTimer = new Timer();
+                    hideTimer.Tick += delegate
+                    {
+                        hideTimer.Stop();
+                        ApplyLoading(false);
+                    };
+                }
+                hideTimer.Interval = wait;
+                hideTimer.Start();
+                return;
+            }
+            ApplyLoading(false);
+        }
+
+        private void ApplyLoading(bool on)
+        {
+            loading = on;
+            if (controller != null)
+            {
+                try { controller.IsVisible = !on; } catch { }
+            }
+            if (on)
+            {
+                if (spinTimer == null)
+                {
+                    spinTimer = new Timer();
+                    spinTimer.Interval = 40;
+                    spinTimer.Tick += delegate
+                    {
+                        spinAngle = (spinAngle + 24) % 360;
+                        if (loading) Invalidate();
+                    };
+                }
+                spinTimer.Start();
+                StartWatchdog();
+            }
+            else
+            {
+                if (spinTimer != null) spinTimer.Stop();
+                if (watchdog != null) watchdog.Stop();
+            }
+            Invalidate();
+            Update();
+        }
+
+        /** 万一次导航回调没来，别让窗口一直空着。 */
+        private void StartWatchdog()
+        {
+            if (watchdog == null)
+            {
+                watchdog = new Timer();
+                watchdog.Interval = 20000;
+                watchdog.Tick += delegate
+                {
+                    watchdog.Stop();
+                    if (loading) SetLoading(false);
+                };
+            }
+            watchdog.Stop();
+            watchdog.Start();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            if (!loading) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            int size = 26;
+            float cx = ClientSize.Width / 2f;
+            float cy = ClientSize.Height / 2f;
+            RectangleF rect = new RectangleF(cx - size / 2f, cy - size / 2f, size, size);
+            using (Pen track = new Pen(Color.FromArgb(46, 48, 85, 128), 2.6f))
+            {
+                e.Graphics.DrawEllipse(track, rect);
+            }
+            using (Pen arc = new Pen(ColorTranslator.FromHtml("#305580"), 2.6f))
+            {
+                arc.StartCap = LineCap.Round;
+                arc.EndCap = LineCap.Round;
+                e.Graphics.DrawArc(arc, rect, spinAngle, 90);
+            }
+        }
+
         private void NavigateTo(string url)
         {
             if (!coreReady) return;
             showingError = false;
             inSetup = false;
             lastUrl = url;
+            SetLoading(true);
             core.Navigate(url);
         }
 
         /** 打不开时换成 App 自己的提示页，不用 WebView2 自带的那张报错页。 */
         private void ShowErrorPage()
         {
-            if (errorHtml == null) return;
+            if (errorHtml == null)
+            {
+                SetLoading(false);
+                return;
+            }
             showingError = true;
-            try { core.NavigateToString(errorHtml); } catch { }
+            try { core.NavigateToString(errorHtml); }
+            catch { SetLoading(false); }
         }
 
         private void RetryLast()
