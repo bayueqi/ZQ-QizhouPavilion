@@ -249,6 +249,21 @@ public class MainActivity extends Activity {
         web.setVisibility(View.INVISIBLE);
     }
 
+    /** 停在「打不开」那一页时后退：退回上一个能用的页面，没有就回首页。 */
+    private void leaveErrorPage() {
+        loadFailed = false;
+        failedUrl = null;
+        errorBox.setVisibility(View.GONE);
+        loadingBox.setVisibility(View.GONE);
+        splash.setVisibility(View.GONE);
+        if (web != null && web.canGoBack()) {
+            web.setVisibility(View.VISIBLE);
+            web.goBack();
+        } else {
+            loadHome(false);
+        }
+    }
+
     /**
      * 启动时先把域名解析掉，等 WebView 真发请求时直接命中系统 DNS 缓存，
      * 网络差的机器上一次解析就要一两百毫秒。
@@ -347,6 +362,11 @@ public class MainActivity extends Activity {
             return;
         }
         if ("back".equals(action)) {
+            // 还停在「打不开」那一页时，后退等于退回上一个能用的页面
+            if (loadFailed) {
+                leaveErrorPage();
+                return;
+            }
             if (web != null && !inSetup && web.canGoBack()) web.goBack();
             return;
         }
@@ -700,17 +720,7 @@ public class MainActivity extends Activity {
         }
         // 报错页：先退回上一个能用的页面
         if (loadFailed) {
-            loadFailed = false;
-            failedUrl = null;
-            errorBox.setVisibility(View.GONE);
-            loadingBox.setVisibility(View.GONE);
-            splash.setVisibility(View.GONE);
-            if (web != null && web.canGoBack()) {
-                web.setVisibility(View.VISIBLE);
-                web.goBack();
-            } else {
-                loadHome(false);
-            }
+            leaveErrorPage();
             return;
         }
         if (inSetup) {
