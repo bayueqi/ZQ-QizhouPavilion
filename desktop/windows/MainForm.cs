@@ -14,7 +14,7 @@ namespace QizhouPavilion
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "b19";
+        private const string BuildTag = "b20";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
@@ -33,6 +33,7 @@ namespace QizhouPavilion
         private Timer spinTimer;
         private Timer hideTimer;
         private Timer watchdog;
+        private ContextMenuStrip loadingMenu;
         private FormBorderStyle prevBorder = FormBorderStyle.Sizable;
         private FormWindowState prevState = FormWindowState.Normal;
 
@@ -209,7 +210,13 @@ namespace QizhouPavilion
         /** document-created 阶段注入那次可能 DOM 还没解析完，加载完成后再补一次（脚本自身幂等）。 */
         private async void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            if (!coreReady || inSetup) return;
+            if (!coreReady) return;
+            // 欢迎页自己的加载结果
+            if (inSetup)
+            {
+                SetLoading(false);
+                return;
+            }
             // 错误页自己的加载结果：加载完了才把画面放出来，中间不会闪过内核那张报错页
             if (showingError)
             {
@@ -314,6 +321,54 @@ namespace QizhouPavilion
             watchdog.Start();
         }
 
+        private const int WM_CONTEXTMENU = 0x007B;
+
+        /**
+         * 转圈这层是窗口自己画的，网页拿不到右键；这里补上同六项的菜单，
+         * 和网页里的右键菜单、手机长按菜单一致。
+         */
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_CONTEXTMENU && loading)
+            {
+                ShowLoadingMenu(Cursor.Position);
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
+        private void ShowLoadingMenu(Point screenPos)
+        {
+            if (loadingMenu == null)
+            {
+                loadingMenu = new ContextMenuStrip();
+                loadingMenu.ShowImageMargin = false;
+            }
+            loadingMenu.Items.Clear();
+            loadingMenu.Items.Add(Item("刷新", delegate { RetryLast(); }));
+            loadingMenu.Items.Add(Item(fullscreen ? "退出全屏" : "全屏",
+                delegate { ToggleFullscreen(); }));
+            loadingMenu.Items.Add(Item("更换域名", delegate { ShowSetupPage(Config.Load()); }));
+
+            ToolStripMenuItem back = Item("后退上一页", delegate { NavigateBack(); });
+            back.Enabled = core != null && core.CanGoBack;
+            loadingMenu.Items.Add(back);
+
+            ToolStripMenuItem forward = Item("前进下一页", delegate { NavigateForward(); });
+            forward.Enabled = core != null && core.CanGoForward;
+            loadingMenu.Items.Add(forward);
+
+            loadingMenu.Items.Add(Item("返回主页面", delegate { GoHome(); }));
+            loadingMenu.Show(screenPos);
+        }
+
+        private static ToolStripMenuItem Item(string text, EventHandler onClick)
+        {
+            ToolStripMenuItem it = new ToolStripMenuItem(text);
+            it.Click += onClick;
+            return it;
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
@@ -375,6 +430,11 @@ namespace QizhouPavilion
             if (html == null) return;
             showingError = false;
             inSetup = true;
+            // 转圈时点「更换域名」：把在跑的那次导航停掉，欢迎页加载完才把画面放出来
+            if (loading)
+            {
+                try { core.Stop(); } catch { }
+            }
             core.NavigateToString(html);
         }
 
