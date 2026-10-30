@@ -14,7 +14,7 @@ namespace QizhouPavilion
      */
     internal sealed class MainForm : Form
     {
-        private const string BuildTag = "b20";
+        private const string BuildTag = "b21";
 
         private readonly string startUrl;
         private CoreWebView2Controller controller;
@@ -33,7 +33,6 @@ namespace QizhouPavilion
         private Timer spinTimer;
         private Timer hideTimer;
         private Timer watchdog;
-        private ContextMenuStrip loadingMenu;
         private FormBorderStyle prevBorder = FormBorderStyle.Sizable;
         private FormWindowState prevState = FormWindowState.Normal;
 
@@ -174,7 +173,8 @@ namespace QizhouPavilion
             st.AreDevToolsEnabled = false;
             // 缩放交给网页自己的 viewport，App 不再提供缩放，免得缩放系数和点击坐标对不上
             st.IsZoomControlEnabled = false;
-            // 需要保留默认上下文菜单的触发生效，具体条目在 OnContextMenu 里换成我们自己的六项
+            // 需要保留默认上下文菜单的触发生效（关掉就收不到 ContextMenuRequested），
+            // 具体画什么在 OnContextMenu 里交给 AppMenu
             st.AreDefaultContextMenusEnabled = true;
             string ua = st.UserAgent;
             if (ua != null && ua.Contains("; wv")) st.UserAgent = ua.Replace("; wv", "");
@@ -331,42 +331,40 @@ namespace QizhouPavilion
         {
             if (m.Msg == WM_CONTEXTMENU && loading)
             {
-                ShowLoadingMenu(Cursor.Position);
+                ShowAppMenu(Cursor.Position);
                 return;
             }
             base.WndProc(ref m);
         }
 
-        private void ShowLoadingMenu(Point screenPos)
+        /** 六项菜单：网页里、转圈层上都用这一份，样式见 AppMenu。 */
+        private void ShowAppMenu(Point screenPos)
         {
-            if (loadingMenu == null)
-            {
-                loadingMenu = new ContextMenuStrip();
-                loadingMenu.ShowImageMargin = false;
-            }
-            loadingMenu.Items.Clear();
-            loadingMenu.Items.Add(Item("刷新", delegate { RetryLast(); }));
-            loadingMenu.Items.Add(Item(fullscreen ? "退出全屏" : "全屏",
-                delegate { ToggleFullscreen(); }));
-            loadingMenu.Items.Add(Item("更换域名", delegate { ShowSetupPage(Config.Load()); }));
-
-            ToolStripMenuItem back = Item("后退上一页", delegate { NavigateBack(); });
-            back.Enabled = core != null && core.CanGoBack;
-            loadingMenu.Items.Add(back);
-
-            ToolStripMenuItem forward = Item("前进下一页", delegate { NavigateForward(); });
-            forward.Enabled = core != null && core.CanGoForward;
-            loadingMenu.Items.Add(forward);
-
-            loadingMenu.Items.Add(Item("返回主页面", delegate { GoHome(); }));
-            loadingMenu.Show(screenPos);
-        }
-
-        private static ToolStripMenuItem Item(string text, EventHandler onClick)
-        {
-            ToolStripMenuItem it = new ToolStripMenuItem(text);
-            it.Click += onClick;
-            return it;
+            string[] labels = {
+                "刷新",
+                fullscreen ? "退出全屏" : "全屏",
+                "更换域名",
+                "后退上一页",
+                "前进下一页",
+                "返回主页面"
+            };
+            bool[] enabled = {
+                true,
+                true,
+                true,
+                core != null && core.CanGoBack,
+                core != null && core.CanGoForward,
+                true
+            };
+            Action[] actions = {
+                delegate { RetryLast(); },
+                delegate { ToggleFullscreen(); },
+                delegate { ShowSetupPage(Config.Load()); },
+                delegate { NavigateBack(); },
+                delegate { NavigateForward(); },
+                delegate { GoHome(); }
+            };
+            new AppMenu(labels, enabled, actions).ShowAt(screenPos);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -520,64 +518,9 @@ namespace QizhouPavilion
             if (!coreReady || inSetup) return;
             try
             {
-                var items = e.MenuItems;
-                items.Clear();
-
-                CoreWebView2Environment env = core.Environment;
-
-                CoreWebView2ContextMenuItem reload = env.CreateContextMenuItem(
-                    "刷新", null, CoreWebView2ContextMenuItemKind.Command);
-                reload.CustomItemSelected += delegate
-                {
-                    BeginInvoke((Action)(() =>
-                    {
-                        if (showingError) RetryLast();
-                        else if (core != null) core.Reload();
-                    }));
-                };
-                items.Add(reload);
-
-                CoreWebView2ContextMenuItem full = env.CreateContextMenuItem(
-                    fullscreen ? "退出全屏" : "全屏", null, CoreWebView2ContextMenuItemKind.Command);
-                full.CustomItemSelected += delegate
-                {
-                    BeginInvoke((Action)(() => ToggleFullscreen()));
-                };
-                items.Add(full);
-
-                CoreWebView2ContextMenuItem domain = env.CreateContextMenuItem(
-                    "更换域名", null, CoreWebView2ContextMenuItemKind.Command);
-                domain.CustomItemSelected += delegate
-                {
-                    BeginInvoke((Action)(() => ShowSetupPage(Config.Load())));
-                };
-                items.Add(domain);
-
-                CoreWebView2ContextMenuItem back = env.CreateContextMenuItem(
-                    "后退上一页", null, CoreWebView2ContextMenuItemKind.Command);
-                back.IsEnabled = core.CanGoBack;
-                back.CustomItemSelected += delegate
-                {
-                    BeginInvoke((Action)(() => NavigateBack()));
-                };
-                items.Add(back);
-
-                CoreWebView2ContextMenuItem forward = env.CreateContextMenuItem(
-                    "前进下一页", null, CoreWebView2ContextMenuItemKind.Command);
-                forward.IsEnabled = core.CanGoForward;
-                forward.CustomItemSelected += delegate
-                {
-                    BeginInvoke((Action)(() => NavigateForward()));
-                };
-                items.Add(forward);
-
-                CoreWebView2ContextMenuItem home = env.CreateContextMenuItem(
-                    "返回主页面", null, CoreWebView2ContextMenuItemKind.Command);
-                home.CustomItemSelected += delegate
-                {
-                    BeginInvoke((Action)(() => GoHome()));
-                };
-                items.Add(home);
+                // 交给自绘的 AppMenu 画，和转圈层上那份菜单是同一套样式
+                e.Handled = true;
+                ShowAppMenu(Cursor.Position);
             }
             catch
             {
@@ -664,6 +607,202 @@ namespace QizhouPavilion
                 return true;
             }
             return false;
+        }
+    }
+
+    /**
+     * 自绘的右键菜单。Windows 自带菜单是方角老样式，和网页里那套（以及 Linux 自绘的）
+     * 差得远，这里按同一份样式画：白卡片、圆角、悬停高亮、不可用项变灰。
+     */
+    internal sealed class AppMenu : Form
+    {
+        private const int CS_DROPSHADOW = 0x00020000;
+        private const int CardPad = 6;
+        private const int ItemPadX = 13;
+        private const int ItemPadY = 11;
+        private const int ItemRadius = 9;
+        private const int CardRadius = 14;
+        private const int MinWidth = 184;
+
+        private readonly string[] labels;
+        private readonly bool[] enabled;
+        private readonly Action[] actions;
+        private int hover = -1;
+        private int itemHeight;
+        private int cardWidth;
+        private bool closing;
+
+        public AppMenu(string[] labels, bool[] enabled, Action[] actions)
+        {
+            this.labels = labels;
+            this.enabled = enabled;
+            this.actions = actions;
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            BackColor = Color.White;
+            DoubleBuffered = true;
+            Font = new Font("Microsoft YaHei UI", 14f, FontStyle.Regular, GraphicsUnit.Pixel);
+            Measure();
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ClassStyle |= CS_DROPSHADOW;
+                return cp;
+            }
+        }
+
+        private void Measure()
+        {
+            int textWidth = 0;
+            int textHeight = 0;
+            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+            {
+                for (int i = 0; i < labels.Length; i++)
+                {
+                    Size sz = TextRenderer.MeasureText(g, labels[i], Font);
+                    if (sz.Width > textWidth) textWidth = sz.Width;
+                    if (sz.Height > textHeight) textHeight = sz.Height;
+                }
+            }
+            itemHeight = textHeight + ItemPadY * 2;
+            cardWidth = Math.Max(MinWidth, textWidth + ItemPadX * 2 + CardPad * 2);
+            ClientSize = new Size(cardWidth, itemHeight * labels.Length + CardPad * 2);
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ApplyRoundRegion(CardRadius);
+        }
+
+        private void ApplyRoundRegion(int radius)
+        {
+            using (GraphicsPath path = RoundedPath(new Rectangle(0, 0, Width - 1, Height - 1), radius))
+            {
+                Region old = Region;
+                Region = new Region(path);
+                if (old != null) old.Dispose();
+            }
+        }
+
+        private static GraphicsPath RoundedPath(Rectangle r, int radius)
+        {
+            int d = radius * 2;
+            GraphicsPath path = new GraphicsPath();
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        private Rectangle ItemRect(int i)
+        {
+            return new Rectangle(CardPad, CardPad + itemHeight * i,
+                cardWidth - CardPad * 2, itemHeight);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            for (int i = 0; i < labels.Length; i++)
+            {
+                Rectangle r = ItemRect(i);
+                bool hot = i == hover && enabled[i];
+                if (hot)
+                {
+                    using (GraphicsPath p = RoundedPath(r, ItemRadius))
+                    using (SolidBrush b = new SolidBrush(Color.FromArgb(236, 240, 244)))
+                    {
+                        e.Graphics.FillPath(b, p);
+                    }
+                }
+                Color c;
+                if (!enabled[i]) c = ColorTranslator.FromHtml("#C2C7D0");
+                else if (hot) c = ColorTranslator.FromHtml("#254267");
+                else c = ColorTranslator.FromHtml("#1F2937");
+
+                Rectangle text = new Rectangle(r.X + ItemPadX, r.Y, r.Width - ItemPadX * 2, r.Height);
+                TextRenderer.DrawText(e.Graphics, labels[i], Font, text, c,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+            }
+        }
+
+        private int IndexAt(Point p)
+        {
+            for (int i = 0; i < labels.Length; i++)
+            {
+                if (ItemRect(i).Contains(p)) return i;
+            }
+            return -1;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            int i = IndexAt(e.Location);
+            if (i != hover)
+            {
+                hover = i;
+                Invalidate();
+            }
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            if (hover != -1)
+            {
+                hover = -1;
+                Invalidate();
+            }
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                int i = IndexAt(e.Location);
+                if (i >= 0 && enabled[i])
+                {
+                    Action run = actions[i];
+                    Dismiss();
+                    if (run != null) run();
+                    return;
+                }
+            }
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnDeactivate(EventArgs e)
+        {
+            base.OnDeactivate(e);
+            Dismiss();
+        }
+
+        private void Dismiss()
+        {
+            if (closing) return;
+            closing = true;
+            Close();
+        }
+
+        /** 在鼠标处弹出，贴边时往里收。 */
+        public void ShowAt(Point screenPos)
+        {
+            Rectangle wa = Screen.FromPoint(screenPos).WorkingArea;
+            int x = Math.Min(screenPos.X, wa.Right - Width);
+            int y = Math.Min(screenPos.Y, wa.Bottom - Height);
+            Location = new Point(Math.Max(wa.Left, x), Math.Max(wa.Top, y));
+            Show();
+            Activate();
         }
     }
 
